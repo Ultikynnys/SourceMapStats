@@ -10,9 +10,9 @@ A way to gather and display map relevancy for a given Source game and Gamemode.
 
 ## Usage
 * Run the Write.py and start collecting data.
-*The data will be stored in a output.csv file by default in the same directory.
+* The data will be stored in a output.csv file by default in the same directory.
 * Once you have a Output.csv with some data. You can view it with the Read.py file.
-*This will show you relevant information about the data you've just collected and generate a .png 
+* This will show you relevant information about the data you've just collected and generate a .png 
 
 ## Installation
 * Launch the install.bat to get py dependencies
@@ -21,7 +21,7 @@ A way to gather and display map relevancy for a given Source game and Gamemode.
 
 ## Debugging
 * Make sure that the python-valve folder is not empty. It contains a submodule that is required.
-*cd <directory of repo>
-*git submodule update --init
+* cd <directory of repo>
+* git submodule update --init
 
 
