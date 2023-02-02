@@ -1,3 +1,3 @@
-echo off
-cd %~dp0
+#!/bin/sh
+
 pip install -r requirements.txt
