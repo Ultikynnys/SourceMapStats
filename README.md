@@ -20,8 +20,9 @@ A way to gather and display map relevancy for a given Source game and Gamemode.
 * Open the Read.py to Configure the desired game. default is tf
 
 ## Debugging
-* Make sure that the python-valve folder is not empty. It contains a submodule that is required.
-* cd <directory of repo>
-* git submodule update --init
+* Make sure that the python-valve folder is not empty. It contains a submodule which is required.
+
+        cd <directory of repo>
+        git submodule update --init
 
 
