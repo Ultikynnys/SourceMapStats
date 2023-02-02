@@ -3,7 +3,7 @@
 
 
 ## What is this?
-A way to display map relevancy for a given gamemode and game.
+A way to display map relevancy for a given Source game and Gamemode.
 ![parsecd_JitopkOtxP](https://user-images.githubusercontent.com/29761720/216379923-94c30771-f4c8-45ac-81af-e2708c6b1598.png)
 
 
