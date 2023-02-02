@@ -8,8 +8,9 @@ import csv
 from time import time,sleep
 
 #Manually adding submodule path from this path
-
-sys.path.append(os.path.join(os.getcwd(), "python-valve"))
+real = os.path.dirname(os.path.abspath(__file__))
+real2 = real+"\\"+"python-valve"
+sys.path.append(real2)
 import valve.source
 import valve.source.master_server
 import valve.source.messages
@@ -21,7 +22,7 @@ timeout_master = 1
 regionserver= "all"
 game="csgo" # cstrike,tf,hl2,hl2mp,csgo
 prefix = "dr_"
-filename = "output.csv"
+file= "output.csv"
 
 #scan masterserver for ips, output address if it contains prefix=dr_
 def SlowScan():
@@ -60,19 +61,19 @@ def SlowScan():
 # Writes input to csv use prefixcull for all servers
 def ProtoWriter(list):
     try:
-        with open(rawfilename,"r") as filedata:
+        with open(file,"r") as filedata:
             print("read successful")
     except:
-        with open(rawfilename,"w",newline="") as filedata:
+        with open(file,"w",newline="") as filedata:
             print("NO FILE, MAKING NEW")
 
-    with open(rawfilename,"a",newline="") as filedata:
+    with open(file,"a",newline="") as filedata:
             for ip in list:
                 csv.writer(filedata).writerow(ip)
 # Scans unique Ip's in .cvs file and appends new data to the list Much faster than scanning all the servers
 def FastScan():
     iplist = []
-    with open(rawfilename,"r") as filedata:
+    with open(file,"r") as filedata:
         csvreader = csv.reader(filedata)
         for ip in csvreader:
             if (ip[0],ip[1]) not in iplist:
@@ -130,10 +131,6 @@ def MainWriter(isfast):
 # length determines how long the program runs for before automatically stopping. You can stop the program at any time.
 #Run MainWriter in fast/slow mode for n minutes
 def Iterator(delay=5,length=60,update=15):
-    global dirname
-    global rawfilename 
-    dirname = os.getcwd()
-    rawfilename = os.path.join(dirname,filename)
 
     end = time() + length*60
     x = update
