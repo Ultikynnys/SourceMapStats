@@ -17,7 +17,7 @@ import valve.source
 import valve.source.master_server
 import valve.source.messages
 import valve.source.util
-
+import valve.source.messages
 #Parameters
 timeout_query = 1
 timeout_master = 1
@@ -60,7 +60,6 @@ def SlowScan():
                 print(f"{x}:servers {y}:server errors {z}:timeouts")
 
             print("__________")
-            print(ips)
             return ips
         except valve.source.NoResponseError:
             print("Master server request timed out!")
@@ -84,9 +83,9 @@ def FastScan():
         for ip in csvreader:
             if (ip[0],ip[1]) not in iplist:
                 iplist.append((ip[0],ip[1]))
-                print(iplist)
-            else:
-                print(f"{ip}:duplicate!!!!")
+    print("#################################################")
+    print(iplist)
+    print("######## SERVERS FOUND FROM CSV #################")
     return iplist
 def Listscan(list_ips=[]):
     format = '%Y-%m-%d-%H:%M:%S' # date format
@@ -97,7 +96,6 @@ def Listscan(list_ips=[]):
     try:
         for address in list_ips:
             fix_address = (address[0],int(address[1]))
-            print(fix_address)
             try:
                 server = a2s.info(fix_address,timeout=timeout_query)
 
@@ -110,17 +108,14 @@ def Listscan(list_ips=[]):
                     datastack.append(region)
                     ips.append(datastack)
                     x += 1
+
             except (AttributeError,a2s.BrokenMessageError):
-                
-                
                 y += 1
             except socket.timeout:
                 z += 1
-            print(f"{x}:servers {y}:server errors {z}:timeouts")
 
-        print("__________")
-        print(ips)
         return ips
+        
     except valve.source.NoResponseError:
         print("Master server request timed out!")
 # Runs in slow mode first to create initial server list, then in fast mode. Running in slowmode afterwards increase the sever pool that fast mode scans for.

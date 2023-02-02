@@ -11,3 +11,4 @@ Untitled.ipynb
 *.json
 venv2/
 .vs/
+output.csv
