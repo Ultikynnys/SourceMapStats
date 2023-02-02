@@ -9,7 +9,10 @@ from time import time,sleep
 
 #Manually adding submodule path from this path
 
-sys.path.append(os.path.join(os.getcwd(), "python-valve"))
+
+dirname = os.path.dirname(os.path.realpath(__file__))
+importfilepath = os.path.join(dirname,"python-valve")
+sys.path.append(importfilepath)
 import valve.source
 import valve.source.master_server
 import valve.source.messages
@@ -22,6 +25,10 @@ regionserver= "all"
 game="csgo" # cstrike,tf,hl2,hl2mp,csgo
 prefix = "dr_"
 filename = "output.csv"
+
+
+#init
+rawfilename = os.path.join(dirname,filename)
 
 #scan masterserver for ips, output address if it contains prefix=dr_
 def SlowScan():
@@ -130,10 +137,6 @@ def MainWriter(isfast):
 # length determines how long the program runs for before automatically stopping. You can stop the program at any time.
 #Run MainWriter in fast/slow mode for n minutes
 def Iterator(delay=5,length=60,update=15):
-    global dirname
-    global rawfilename 
-    dirname = os.getcwd()
-    rawfilename = os.path.join(dirname,filename)
 
     end = time() + length*60
     x = update

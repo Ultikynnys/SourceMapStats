@@ -174,7 +174,7 @@ def timechunker():
     chunkedarray_index = 0
     chunktime = timedelta(AverageDays,0,0,0,0,0,0)#Interval means days here
     initialtime = None
-    dirname = os.getcwd()
+    dirname = os.path.dirname(os.path.realpath(__file__))
     rawfilename = os.path.join(dirname,filename)
     with open(rawfilename,"r") as serverdata:
         rawrawstat = csv.reader(serverdata)
