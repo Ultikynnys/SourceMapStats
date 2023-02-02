@@ -24,5 +24,6 @@ A way to gather and display map relevancy for a given Source game and Gamemode.
 
         cd <directory of repo>
         git submodule update --init
-
-
+        
+* Make sure that python and pip is installed on your computer. Otherwise the install.bat wont work
+* Additionally make sure that your pip works by doing pip in cmd
