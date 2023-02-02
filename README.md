@@ -4,8 +4,8 @@
 
 ## Usage
 * Launch the install.bat to get py dependencies
-* Launch the Watcher to gather in .csv format
-* Launch the Reader to view the gathered information.
+* Launch the Statistics_Write.py to gather in .csv format
+* Launch the Statistics_Read.py to view the gathered information.
 * Configure the desired map prefix. default is dr_
 * Configure the desired game. default is tf
 
