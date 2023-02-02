@@ -22,7 +22,7 @@ import valve.source.util
 timeout_query = 1
 timeout_master = 1
 regionserver= "all"
-game="csgo" # cstrike,tf,hl2,hl2mp,csgo
+game="tf" # cstrike,tf,hl2,hl2mp,csgo
 prefix = "dr_"
 filename = "output.csv"
 

@@ -10,6 +10,7 @@ import os
 
 #Parameters
 filename = "output.csv" #file to read
+filenamepng = "output.png" #name of the figure
 StartCount, EndCount = (1,5)#map range where 1 is the most popular map
 AverageDays = 4 #how many days each bar represents
 StartDate = "2001-10-02-19:46:11" #date range to use
@@ -111,7 +112,12 @@ def plotter():
     plt.grid(True)
     plt.legend()
     plot.title(f"Top {StartCount+mapcount} maps out of {Totalmapcount}")
+    dirname = os.path.dirname(os.path.realpath(__file__))
+    rawfilename = os.path.join(dirname,filenamepng)
+    plt.savefig(rawfilename)
     plt.show()
+
+    
     
 
 def ColorGen():
