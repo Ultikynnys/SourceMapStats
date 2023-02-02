@@ -10,7 +10,7 @@ A way to display map relevancy for a given Source game and Gamemode.
 
 ## Usage
 * Run the Statistics_Write.py and start collecting data.
-The data will be stored in a output.csv folder by default in the same directory.
+The data will be stored in a output.csv file by default in the same directory.
 * Once you have a Output.csv with some data. You can view it with the Statistics_Read.py file.
 This will show you relevant information about the data you've just collected.
 
