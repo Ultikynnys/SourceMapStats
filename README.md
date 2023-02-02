@@ -21,5 +21,7 @@ This will show you relevant information about the data you've just collected and
 
 ## Debugging
 * Make sure that the python-valve folder is not empty. It contains a submodule that is required.
+cd <directory of repo>
+git submodule update --init
 
 
