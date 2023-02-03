@@ -17,8 +17,9 @@ A way to gather and display map relevancy for a given Source game and Gamemode.
 ## Installation
 * Download the repository with these comands
         
-        git clone https://github.com/R60D/SourceMapStats
-        git submodule update --init
+        ```git clone https://github.com/R60D/SourceMapStats```
+        ```cd <path of folder>```
+        ```git submodule update --init```
         
 * Launch the install.bat to get py dependencies
 * Open the Write.py to Configure the desired map prefix. default is dr_
