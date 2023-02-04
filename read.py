@@ -11,9 +11,9 @@ from R6LIB import dictmerger,dictmax,dictlimx,arrayrectifier,weakfiller
 from write import Format
 
 #Parameters
-filename = "output.csv" #file to read
+filename = "output_example.csv" #file to read
 filenamepng = "output.png" #name of the figure
-MapsToShow = 0 #How many maps to show in order of popularity
+MapsToShow = 10 #How many maps to show in order of popularity
 AverageDays = 2 #how many days each bar represents
 StartDate = "2001-10-02" #date range to use
 EndDate = "2025-10-02"  #date range to use
@@ -121,19 +121,24 @@ def DuplicateMerger(data):
     return datatemp2
 
 def SuffixFilter(x):
+    newname = ""
     prefix = re.split("_",x)[0]
     y = re.search(prefix,x).start()
     z = x[y:]
     e = z.split("_")
-    if(len(e) == 3):
-        rex = f"{e[0]}_{e[1]}_{e[2]}"
-    else:
-        rex = f"{e[0]}_{e[1]}"
-        return rex
+
     for n in filter:
-        if n in e[2]:
-            rex = f"{e[0]}_{e[1]}"
-    return rex
+        for idx, n2 in enumerate(e):
+            if(n in n2):
+                e.pop(idx)
+    
+    for e2 in e:
+        if(newname != ""):
+            newname += f"_{e2}"
+        else:
+            newname +=e2
+
+    return newname
 
 def plotter():
     global StartCount
