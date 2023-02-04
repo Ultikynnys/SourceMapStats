@@ -24,6 +24,7 @@ A way to gather and display map relevancy for a given Source game and Gamemode.
         
 * Launch the install.bat to get py dependencies
 * Open the Write.py to Configure the desired gamemode and game.
+* Open the Read.py to Configure the desired maps to look for and more.
 
 ## Debugging
 * Do not download the repository as a zip from github directly. Use ```git clone``` instead.
