@@ -15,14 +15,14 @@ from write import Format
 filename = "output.csv" #file to read
 filenamepng = "output.png" #name of the figure
 MapsToShow = 15 #How many maps to show in order of popularity
-AverageDays = 2 #how many days each bar represents
+AverageDays = 3 #how many days each bar represents
 StartDate = "2001-10-02" #date range to use
 EndDate = "2022-10-02"  #date range to use
-XaxisDates = 1 #How many dates to show in the figure. Maximum is the amount of bars. Minimum is 2
+XaxisDates = 5 #How many dates to show in the figure. Maximum is the amount of bars. Minimum is 2
 OnlyMapsContaining = [""] #EX.["Playstation","Bazinga","Lazy"]
 ColorForOtherMaps = (0.5,0.5,0.5)
 ColorIntensity = 25
-wordfilter = ["fix","final","redux","finished","remake","optimized","finalplus","mini"] #Will not consider maps with these suffixes to be unique
+wordfilter = ["fix","final","redux","finished","remake","optimized","finalplus","mini","vsh"] #Will not consider maps with these suffixes to be unique
 versionfilter = ["v","b","a","rc","x","f"]
 
 
