@@ -20,7 +20,7 @@ XaxisDates = 5 #How many dates to show in the figure. Maximum is the amount of b
 OnlyMapsContaining = [""] #EX.["Playstation","Bazinga","Lazy"] or gamemodes like ["ze_"]
 ColorForOtherMaps = (0.5,0.5,0.5)
 ColorIntensity = 25
-wordfilter = ["fix","final","redux","finished","remake","optimized","finalplus","mini","vsh"] #Will not consider maps with these suffixes to be unique
+wordfilter = ["fix","final","redux","finished","remake","optimized","finalplus","mini"] #Will not consider maps with these suffixes to be unique
 versionfilter = ["v","b","a","rc","x","f"] #Will not consider maps with these version suffixes to be unique
 
 
@@ -145,50 +145,36 @@ def SuffixFilter(x):
     return newname
 
 def plotter():
-    global StartCount
-    global EndCount
     global AverageDays
     global previousmap
     global previouscolor
     global mapcount
     global force
-    global tripletime
     global Labels
     global Handles
 
     Labels = []
     Handles = []
     force = False
-
     previouscolor = 0
     allmaps = {}
     previousmap = None
-
-
     RawVersionFitler = []
+
     for version in versionfilter:
         RawVersionFitler.append(version)
         for d in range(10):
             RawVersionFitler.append(version+str(d))
-            
-    
     wordfilter.extend(RawVersionFitler)
 
-
-    
     predata = timechunker()
     rawdata = SuffixRemover(predata)
     data = DuplicateMerger(rawdata)
     combineddata = dictmerger(data.values())
     mapcount = len(combineddata)
-
     WhiteListedData = (weakfiller(combineddata,OnlyMapsContaining))
-
     FilteredMaps = dictlimx(combineddata,WhiteListedData)
-    
-    TopMaps = dictmax(FilteredMaps,MapsToShow)#Top maps
-
-
+    TopMaps = dictmax(FilteredMaps,MapsToShow)
 
     YDICT = [dictlimx(datachunk,TopMaps) for datachunk in data.values()]
     YLIST = arrayrectifier([list(x.values()) for x in YDICT])
@@ -202,11 +188,10 @@ def plotter():
 
     if(XaxisDates2>len(timerange)):
         X = timerange
+
     else:
         X = [timerange[int((len(timerange))*((x)/XaxisDates2))] for x in range(XaxisDates2)]
         X.append(timerange[-1])
-
-
 
     #create a filler for the other maps not displayed
     NAMEY = zip(TopMaps,Transpose_YLIST)
@@ -214,8 +199,8 @@ def plotter():
         _YNORMALIZED = _Y/YMAX
         plotdraw(X,_YNORMALIZED,mapname)
 
-    force = True
     if(type(previousmap) is not type(None) and len(TopMaps) != mapcount):
+        force = True
         plotdraw(X,np.ones((len(previousmap)), dtype=int)-previousmap,"Other Maps")
         plt.title(f"Top {len(TopMaps)} Maps with keywords {OnlyMapsContaining} out of {mapcount}")
         plt.legend(list(reversed(Handles)),list(reversed(Labels)))
@@ -229,16 +214,10 @@ def plotter():
         plt.legend(list(reversed(Handles)),list(reversed(Labels)))
         plt.grid(True)
 
-
-
-
     dirname = os.path.dirname(os.path.realpath(__file__))
     rawfilename = os.path.join(dirname,filenamepng)
     plt.savefig(rawfilename)
     plt.show()
-
-
-
 
 if __name__ == "__main__":##when launched directly.
     plotter()
