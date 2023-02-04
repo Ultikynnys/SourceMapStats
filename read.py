@@ -1,12 +1,10 @@
 import matplotlib.pyplot as plt
-import matplotlib.pyplot as plot
 from math import pi
 import numpy as np
 import csv
 import re
 from statistics import mean 
 from datetime import datetime, timedelta
-import copy
 import os
 from R6LIB import dictmerger,dictmax,dictlimx,arrayrectifier,weakfiller
 from write import Format
@@ -14,16 +12,16 @@ from write import Format
 #Parameters
 filename = "output.csv" #file to read
 filenamepng = "output.png" #name of the figure
-MapsToShow = 15 #How many maps to show in order of popularity
-AverageDays = 3 #how many days each bar represents
+MapsToShow = 90 #How many maps to show in order of popularity
+AverageDays = 1 #how many days each bar represents
 StartDate = "2001-10-02" #date range to use
-EndDate = "2022-10-02"  #date range to use
+EndDate = "2040-10-02"  #date range to use
 XaxisDates = 5 #How many dates to show in the figure. Maximum is the amount of bars. Minimum is 2
-OnlyMapsContaining = [""] #EX.["Playstation","Bazinga","Lazy"]
+OnlyMapsContaining = [""] #EX.["Playstation","Bazinga","Lazy"] or gamemodes like ["ze_"]
 ColorForOtherMaps = (0.5,0.5,0.5)
 ColorIntensity = 25
 wordfilter = ["fix","final","redux","finished","remake","optimized","finalplus","mini","vsh"] #Will not consider maps with these suffixes to be unique
-versionfilter = ["v","b","a","rc","x","f"]
+versionfilter = ["v","b","a","rc","x","f"] #Will not consider maps with these version suffixes to be unique
 
 
 
@@ -219,15 +217,15 @@ def plotter():
     force = True
     if(type(previousmap) is not type(None) and len(TopMaps) != mapcount):
         plotdraw(X,np.ones((len(previousmap)), dtype=int)-previousmap,"Other Maps")
-        plot.title(f"Top {len(TopMaps)} Maps with keywords {OnlyMapsContaining} out of {mapcount}")
+        plt.title(f"Top {len(TopMaps)} Maps with keywords {OnlyMapsContaining} out of {mapcount}")
         plt.legend(list(reversed(Handles)),list(reversed(Labels)))
         plt.grid(True)
 
     elif(mapcount == 0):
-        plot.title(f"None maps found using keywords {OnlyMapsContaining}")
+        plt.title(f"None maps found using keywords {OnlyMapsContaining}")
 
     else:
-        plot.title(f"Top {len(TopMaps)} Maps with keywords {OnlyMapsContaining} out of {mapcount}")
+        plt.title(f"Top {len(TopMaps)} Maps with keywords {OnlyMapsContaining} out of {mapcount}")
         plt.legend(list(reversed(Handles)),list(reversed(Labels)))
         plt.grid(True)
 
