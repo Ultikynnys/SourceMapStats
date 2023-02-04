@@ -13,12 +13,12 @@ from write import Format
 #Parameters
 filename = "output.csv" #file to read
 filenamepng = "output.png" #name of the figure
-MapsToShow = 3 #How many maps to show in order of popularity
+MapsToShow = 0 #How many maps to show in order of popularity
 AverageDays = 2 #how many days each bar represents
 StartDate = "2001-10-02" #date range to use
 EndDate = "2025-10-02"  #date range to use
 XaxisDates = 5 #How many dates to show in the figure. Maximum is the amount of bars. Minimum is 2
-OnlyMapsContaining = ["Playstation","Bazinga","Lazy"] #EX.["Playstation","Bazinga","Lazy"]
+OnlyMapsContaining = [""] #EX.["Playstation","Bazinga","Lazy"]
 ColorForOtherMaps = (0.5,0.5,0.5)
 ColorIntensity = 25
 filter = ["fix","final","redux","1","2","3","4","5","6","7","8","9","0","finished","remake"] #Will not consider maps with these suffixes to be unique
@@ -195,14 +195,14 @@ def plotter():
         plotdraw(X,_YNORMALIZED,mapname)
 
     force = True
-    if(len(TopMaps) != mapcount):
+    if(len(TopMaps) != mapcount and type(previousmap) is not type(None)):
         plotdraw(X,np.ones((len(previousmap)), dtype=int)-previousmap,"Other Maps")
-
+        plot.title(f"Top {len(TopMaps)} Maps with keywords {OnlyMapsContaining} out of {mapcount}")
+        plt.legend(list(reversed(Handles)),list(reversed(Labels)))
+    else:
+        plot.title(f"None maps found using keywords {OnlyMapsContaining}")
     plt.grid(True)
-    #print(Handles)
-    #print(Labels)
-    plt.legend(list(reversed(Handles)),list(reversed(Labels)))
-    plot.title(f"Top {len(TopMaps)} Maps with keywords {OnlyMapsContaining} out of {mapcount}")
+
     dirname = os.path.dirname(os.path.realpath(__file__))
     rawfilename = os.path.join(dirname,filenamepng)
     plt.savefig(rawfilename)
