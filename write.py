@@ -8,8 +8,6 @@ import csv
 from time import time,sleep
 
 #Manually adding submodule path from this path
-
-
 dirname = os.path.dirname(os.path.realpath(__file__))
 importfilepath = os.path.join(dirname,"python-valve")
 sys.path.append(importfilepath)
@@ -18,21 +16,20 @@ import valve.source.master_server
 import valve.source.messages
 import valve.source.util
 import valve.source.messages
+
 #Parameters
 timeout_query = 1
 timeout_master = 1
 regionserver= "all"
 game="tf" # cstrike,tf,hl2,hl2mp,csgo
-prefix = "dr_"
-filename = "output.csv"
+Gamemode = "dr_"# Gamemode dr_,pl_,ctf_
+OutputFileName = "output.csv" #Output Filename
+RuntimeMinutes = 60 #for how many minutes to run.
+RunForever = True #True will run forever. Set to False to use runtime 
+Format = '%Y-%m-%d-%H:%M:%S' # date format
 
-
-#init
-rawfilename = os.path.join(dirname,filename)
-
-#scan masterserver for ips, output address if it contains prefix=dr_
+#scan masterserver for ips, output address if it is running the desired gamemode
 def SlowScan():
-    format = '%Y-%m-%d-%H:%M:%S' # date format
     x = 0 # number of "broken" servers print me to see it
     y = 0 # number of timed out servers
     z = 0 #total servers
@@ -45,8 +42,8 @@ def SlowScan():
                     server = a2s.info(address,timeout=timeout_query)
 
                     datastack = [address[0],address[1],server.map_name,server.player_count]
-                    if prefix in datastack[2]:
-                        datastack.append(datetime.datetime.now().strftime(format))
+                    if Gamemode in datastack[2]:
+                        datastack.append(datetime.datetime.now().strftime(Format))
                         print(f'!!!!{datastack} has been added')
                         response = requests.get(f"http://ip-api.com/json/{address[0]}").json()
                         region = response["countryCode"]
@@ -88,7 +85,6 @@ def FastScan():
     print("######## SERVERS FOUND FROM CSV #################")
     return iplist
 def Listscan(list_ips=[]):
-    format = '%Y-%m-%d-%H:%M:%S' # date format
     x = 0 # number of "broken" servers print me to see it
     y = 0 # number of timed out servers
     z = 0 #total servers
@@ -100,8 +96,8 @@ def Listscan(list_ips=[]):
                 server = a2s.info(fix_address,timeout=timeout_query)
 
                 datastack = [address[0],fix_address[1],server.map_name,server.player_count]
-                if prefix in datastack[2]:
-                    datastack.append(datetime.datetime.now().strftime(format))
+                if Gamemode in datastack[2]:
+                    datastack.append(datetime.datetime.now().strftime(Format))
                     print(f'!!!!{datastack} has been added')
                     response = requests.get(f"http://ip-api.com/json/{address[0]}").json()
                     region = response["countryCode"]
@@ -125,28 +121,29 @@ def MainWriter(isfast):
         ProtoWriter(a)
     elif isfast == False:
         ProtoWriter(SlowScan())
-    else:
-        print("Invalid mode!!! please use Ex. MainWriter(True,filex)")
 # delay is time between each fast search
 # update is delay between each update where it looks for new servers. IT's very slow.
 # length determines how long the program runs for before automatically stopping. You can stop the program at any time.
 #Run MainWriter in fast/slow mode for n minutes
-def Iterator(delay=5,length=60,update=15):
+def Iterator(delay=5,update=50):
 
-    end = time() + length*60
+    end = time() + RuntimeMinutes*60
     x = update
-    while time() < end:
+    while time() < end or RunForever:
         if x >= update:
-            print("Initiate SLOW SEARCH")
+            print(f"Initiate SLOW SEARCH. This will run every {update} minutes")
             MainWriter(False)
             x = 0
         else:
-            print("Initiate FAST SEARCH")
+            print("Initiate FAST SEARCH. I scan the CSV for servers instead")
             MainWriter(True)
             x += 1
+            print(f"taking a break for {delay} minutes")
             sleep(delay*60)
 
-    print(f"{length} : minutes complete")
+    print(f"{RuntimeMinutes} : minutes complete")
 
+#init
 if __name__ == "__main__":#when launched directly.
+    rawfilename = os.path.join(dirname,OutputFileName)
     Iterator()
