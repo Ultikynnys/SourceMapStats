@@ -15,7 +15,7 @@ A way to gather and display map relevancy for a given Source game and Gamemode.
 * This will show you relevant information about the data you've just collected and generate a .png 
 
 ## Installation
-* Download and Install Python 3.10 or newer
+* Download and Install Python 3.10 or newer and git
 * Download the repository with these comands
         
 ```git clone https://github.com/R60D/SourceMapStats```
@@ -34,8 +34,8 @@ A way to gather and display map relevancy for a given Source game and Gamemode.
 
 * Make sure that python and pip is installed on your computer. Otherwise the install.bat wont work
 * Additionally make sure that your pip works by doing pip in cmd
-
 * None Maps found?
-* Change the Start and End date in the reader.py to reflect your desired timespan.
-* Make sure that MapsToShow is not 0
-* Check that OnlyMapsContaining does not have an filter use ```[""]```
+
+    Change the Start and End date in the reader.py to reflect your desired timespan.\
+
+    Make sure that MapsToShow is not 0
