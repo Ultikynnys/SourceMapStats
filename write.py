@@ -5,6 +5,7 @@ import datetime
 import requests
 import socket
 import csv
+import re
 from time import time,sleep
 
 #Manually adding submodule path from this path
@@ -26,13 +27,22 @@ Gamemode = "dr_"# Gamemode dr_,pl_,ctf_
 OutputFileName = "output.csv" #Output Filename
 RuntimeMinutes = 60 #for how many minutes to run.
 RunForever = True #True will run forever. Set to False to use runtime 
-Format = '%Y-%m-%d-%H:%M:%S' # date format
 
-#scan masterserver for ips, output address if it is running the desired gamemode
+
+#Do not touch
+Format = '%Y-%m-%d-%H:%M:%S'
+
+def PrefixEnsure(string):#Ensures that the gamemode is correct
+    prefix = re.split("_",string)[0].lower()+"_" 
+    if(prefix == Gamemode.lower()):
+        return True
+    else:
+        return False
+
 def SlowScan():
-    x = 0 # number of "broken" servers print me to see it
-    y = 0 # number of timed out servers
-    z = 0 #total servers
+    x = 0 # Servers
+    y = 0 # Broken Servers
+    z = 0 # Timeouts
     ips = []
     with valve.source.master_server.MasterServerQuerier(timeout=timeout_master) as msq:
         try:
@@ -42,7 +52,7 @@ def SlowScan():
                     server = a2s.info(address,timeout=timeout_query)
 
                     datastack = [address[0],address[1],server.map_name,server.player_count]
-                    if Gamemode in datastack[2]:
+                    if PrefixEnsure(datastack[2]):
                         datastack.append(datetime.datetime.now().strftime(Format))
                         print(f'!!!!{datastack} has been added')
                         response = requests.get(f"http://ip-api.com/json/{address[0]}").json()
@@ -85,9 +95,9 @@ def FastScan():
     print("######## SERVERS FOUND FROM CSV #################")
     return iplist
 def Listscan(list_ips=[]):
-    x = 0 # number of "broken" servers print me to see it
-    y = 0 # number of timed out servers
-    z = 0 #total servers
+    x = 0 # Servers
+    y = 0 # Broken Servers
+    z = 0 # Timeouts
     ips = []
     try:
         for address in list_ips:
@@ -96,7 +106,7 @@ def Listscan(list_ips=[]):
                 server = a2s.info(fix_address,timeout=timeout_query)
 
                 datastack = [address[0],fix_address[1],server.map_name,server.player_count]
-                if Gamemode in datastack[2]:
+                if PrefixEnsure(datastack[2]):
                     datastack.append(datetime.datetime.now().strftime(Format))
                     print(f'!!!!{datastack} has been added')
                     response = requests.get(f"http://ip-api.com/json/{address[0]}").json()
