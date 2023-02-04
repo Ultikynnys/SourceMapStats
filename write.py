@@ -135,13 +135,13 @@ def MainWriter(isfast):
 # update is delay between each update where it looks for new servers. IT's very slow.
 # length determines how long the program runs for before automatically stopping. You can stop the program at any time.
 #Run MainWriter in fast/slow mode for n minutes
-def Iterator(delay=5,update=50):
+def Iterator(delay=5,update=15):
 
     end = time() + RuntimeMinutes*60
     x = update
     while time() < end or RunForever:
         if x >= update:
-            print(f"Initiate SLOW SEARCH. This will run every {update} minutes")
+            print(f"Initiate SLOW SEARCH. This will run every {update*delay} minutes")
             MainWriter(False)
             x = 0
         else:
