@@ -4,6 +4,7 @@ from math import pi
 import numpy as np
 import csv
 import re
+from statistics import mean 
 from datetime import datetime, timedelta
 import copy
 import os
@@ -11,17 +12,20 @@ from R6LIB import dictmerger,dictmax,dictlimx,arrayrectifier,weakfiller
 from write import Format
 
 #Parameters
-filename = "output_example.csv" #file to read
+filename = "output.csv" #file to read
 filenamepng = "output.png" #name of the figure
-MapsToShow = 10 #How many maps to show in order of popularity
+MapsToShow = 15 #How many maps to show in order of popularity
 AverageDays = 2 #how many days each bar represents
 StartDate = "2001-10-02" #date range to use
-EndDate = "2025-10-02"  #date range to use
-XaxisDates = 5 #How many dates to show in the figure. Maximum is the amount of bars. Minimum is 2
+EndDate = "2022-10-02"  #date range to use
+XaxisDates = 1 #How many dates to show in the figure. Maximum is the amount of bars. Minimum is 2
 OnlyMapsContaining = [""] #EX.["Playstation","Bazinga","Lazy"]
 ColorForOtherMaps = (0.5,0.5,0.5)
 ColorIntensity = 25
-filter = ["fix","final","redux","1","2","3","4","5","6","7","8","9","0","finished","remake"] #Will not consider maps with these suffixes to be unique
+wordfilter = ["fix","final","redux","finished","remake","optimized","finalplus","mini"] #Will not consider maps with these suffixes to be unique
+versionfilter = ["v","b","a","rc","x","f"]
+
+
 
 def ColorGen():
     global previouscolor
@@ -42,7 +46,7 @@ def ColorGen():
     return col
 
 def plotdraw(_X,_Y,_label):
-    Labels.append(_label)
+    Labels.append(f"{_label} : {round(100*mean(_Y),1)} %")
     global previousmap
     col = ColorGen()
 
@@ -127,9 +131,11 @@ def SuffixFilter(x):
     z = x[y:]
     e = z.split("_")
 
-    for n in filter:
+    for n in wordfilter:
         for idx, n2 in enumerate(e):
-            if(n in n2):
+            if(n == n2 or n == n2[::-1]):
+                e.pop(idx)
+            elif(n in n2 and len(n)>1):
                 e.pop(idx)
     
     for e2 in e:
@@ -159,6 +165,17 @@ def plotter():
     previouscolor = 0
     allmaps = {}
     previousmap = None
+
+
+    RawVersionFitler = []
+    for version in versionfilter:
+        RawVersionFitler.append(version)
+        for d in range(10):
+            RawVersionFitler.append(version+str(d))
+            
+    
+    wordfilter.extend(RawVersionFitler)
+
 
     
     predata = timechunker()
@@ -200,13 +217,22 @@ def plotter():
         plotdraw(X,_YNORMALIZED,mapname)
 
     force = True
-    if(len(TopMaps) != mapcount and type(previousmap) is not type(None)):
+    if(type(previousmap) is not type(None) and len(TopMaps) != mapcount):
         plotdraw(X,np.ones((len(previousmap)), dtype=int)-previousmap,"Other Maps")
         plot.title(f"Top {len(TopMaps)} Maps with keywords {OnlyMapsContaining} out of {mapcount}")
         plt.legend(list(reversed(Handles)),list(reversed(Labels)))
-    else:
+        plt.grid(True)
+
+    elif(mapcount == 0):
         plot.title(f"None maps found using keywords {OnlyMapsContaining}")
-    plt.grid(True)
+
+    else:
+        plot.title(f"Top {len(TopMaps)} Maps with keywords {OnlyMapsContaining} out of {mapcount}")
+        plt.legend(list(reversed(Handles)),list(reversed(Labels)))
+        plt.grid(True)
+
+
+
 
     dirname = os.path.dirname(os.path.realpath(__file__))
     rawfilename = os.path.join(dirname,filenamepng)
