@@ -7,53 +7,45 @@ import socket
 import csv
 import re
 from time import time,sleep
+import Parameters as p
 
 #Manually adding submodule path from this path
 dirname = os.path.dirname(os.path.realpath(__file__))
 importfilepath = os.path.join(dirname,"python-valve")
 sys.path.append(importfilepath)
+
 import valve.source
 import valve.source.master_server
 import valve.source.messages
 import valve.source.util
 import valve.source.messages
 
-#Parameters
-timeout_query = 1
-timeout_master = 1
-regionserver= "all"
-game="tf" # cstrike,tf,hl2,hl2mp,csgo
-Gamemode = "dr_"# Gamemode dr_,pl_,ctf_
-OutputFileName = "output.csv" #Output Filename
-RuntimeMinutes = 60 #for how many minutes to run.
-RunForever = True #True will run forever. Set to False to use runtime 
-
-
-#Do not touch
-Format = '%Y-%m-%d-%H:%M:%S'
-
-def PrefixEnsure(string):#Ensures that the gamemode is correct
+#The Writer will create the .csv dates in this format. DO not change if you already have a .csv
+#Having multiple date formats in a single .csv will corrupt the .csv data.
+WriterTimeFormat = '%Y-%m-%d-%H:%M:%S'
+#Ensures that the gamemode is correct
+def PrefixEnsure(string):
     prefix = re.split("_",string)[0].lower()+"_" 
-    if(prefix == Gamemode.lower()):
+    if(prefix == p.Gamemode.lower()):
         return True
     else:
         return False
-
+#Scan all possible servers in the game for map matches.
 def SlowScan():
     x = 0 # Servers
     y = 0 # Broken Servers
     z = 0 # Timeouts
     ips = []
-    with valve.source.master_server.MasterServerQuerier(timeout=timeout_master) as msq:
+    with valve.source.master_server.MasterServerQuerier(timeout=p.timeout_master) as msq:
         try:
-            for address in msq.find(gamedir=game,empty=True,secure=True,region=regionserver):
+            for address in msq.find(gamedir=p.Game,empty=True,secure=True,region=p.regionserver):
                 print(address)
                 try:
-                    server = a2s.info(address,timeout=timeout_query)
+                    server = a2s.info(address,timeout=p.timeout_query)
 
                     datastack = [address[0],address[1],server.map_name,server.player_count]
                     if PrefixEnsure(datastack[2]):
-                        datastack.append(datetime.datetime.now().strftime(Format))
+                        datastack.append(datetime.datetime.now().strftime(WriterTimeFormat))
                         print(f'!!!!{datastack} has been added')
                         response = requests.get(f"http://ip-api.com/json/{address[0]}").json()
                         region = response["countryCode"]
@@ -70,8 +62,8 @@ def SlowScan():
             return ips
         except valve.source.NoResponseError:
             print("Master server request timed out!")
-# Writes input to csv use prefixcull for all servers
-def ProtoWriter(list):
+#Writes the incoming datastack to a csv line.
+def CSVWriter(list):
     try:
         with open(rawfilename,"r") as filedata:
             print("read successful")
@@ -94,6 +86,7 @@ def FastScan():
     print(iplist)
     print("######## SERVERS FOUND FROM CSV #################")
     return iplist
+# First part of FastScan. Searches for IP's in the CSV.
 def Listscan(list_ips=[]):
     x = 0 # Servers
     y = 0 # Broken Servers
@@ -103,16 +96,16 @@ def Listscan(list_ips=[]):
         for address in list_ips:
             fix_address = (address[0],int(address[1]))
             try:
-                server = a2s.info(fix_address,timeout=timeout_query)
+                server = a2s.info(fix_address,timeout=p.timeout_query)
 
                 datastack = [address[0],fix_address[1],server.map_name,server.player_count]
                 if PrefixEnsure(datastack[2]):
-                    datastack.append(datetime.datetime.now().strftime(Format))
+                    datastack.append(datetime.datetime.now().strftime(WriterTimeFormat))
                     print(f'!!!!{datastack} has been added')
                     response = requests.get(f"http://ip-api.com/json/{address[0]}").json()
                     region = response["countryCode"]
                     datastack.append(region)
-                    ips.append(datastack)
+                    ips.applenamepngend(datastack)
                     x += 1
 
             except (AttributeError,a2s.BrokenMessageError):
@@ -128,20 +121,20 @@ def Listscan(list_ips=[]):
 def MainWriter(isfast):
     if isfast == True:
         a = Listscan(list_ips=FastScan())
-        ProtoWriter(a)
+        CSVWriter(a)
     elif isfast == False:
-        ProtoWriter(SlowScan())
+        CSVWriter(SlowScan())
 # delay is time between each fast search
 # update is delay between each update where it looks for new servers. IT's very slow.
 # length determines how long the program runs for before automatically stopping. You can stop the program at any time.
 #Run MainWriter in fast/slow mode for n minutes
-def Iterator(delay=5,update=15):
+def Iterator(delay=5,FastScansTillSlow=15):
 
-    end = time() + RuntimeMinutes*60
-    x = update
-    while time() < end or RunForever:
-        if x >= update:
-            print(f"Initiate SLOW SEARCH. This will run every {update*delay} minutes")
+    end = time() + p.RuntimeMinutes*60
+    x = FastScansTillSlow
+    while time() < end or p.RunForever:
+        if x >= FastScansTillSlow:
+            print(f"Initiate SLOW SEARCH. This will run every {FastScansTillSlow*delay} minutes")
             MainWriter(False)
             x = 0
         else:
@@ -151,9 +144,8 @@ def Iterator(delay=5,update=15):
             print(f"taking a break for {delay} minutes")
             sleep(delay*60)
 
-    print(f"{RuntimeMinutes} : minutes complete")
-
+    print(f"{p.RuntimeMinutes} : minutes complete")
 #init
-if __name__ == "__main__":#when launched directly.
-    rawfilename = os.path.join(dirname,OutputFileName)
+if __name__ == "__main__":
+    rawfilename = os.path.join(dirname,p.Filename)
     Iterator()
