@@ -35,7 +35,7 @@ def plotdraw(_X,_label):
 
     if(force):
         labelpercn = round(100-percentageSanity,p.Percision)
-        Labels.append(f"{_label} : {labelpercn} %")
+        Labels.append((f"{_label} : {labelpercn} %",labelpercn))
         previousmap = previousmap.tolist()
         Handles.append(plt.bar(np.arange(len(_Y)),_Y, color=col,bottom=previousmap[0:len(_Y)]))
         previousmap = previousmap+np.array(_Y)
@@ -45,7 +45,7 @@ def plotdraw(_X,_label):
 
     elif(type(previousmap) is not type(None)):
         labelpercn = round(100*(sum(_Y)/sum(YMAX)),p.Percision)
-        Labels.append(f"{_label} : {labelpercn} %")
+        Labels.append((f"{_label} : {labelpercn} %",labelpercn))
         previousmap = previousmap.tolist()
         Handles.append(plt.bar(np.arange(len(_Y)),_Y/YMAX, color=col,bottom=previousmap[0:len(_Y)]))
         previousmap = previousmap+np.array(_Y/YMAX)
@@ -53,7 +53,7 @@ def plotdraw(_X,_label):
 
     else:
         labelpercn = round(100*(sum(_Y)/sum(YMAX)),p.Percision)
-        Labels.append(f"{_label} : {labelpercn} %")
+        Labels.append((f"{_label} : {labelpercn} %",labelpercn))
         Handles.append(plt.bar(np.arange(len(_Y)),_Y/YMAX, color=col))
         previousmap = np.array(_Y/YMAX)
         percentageSanity += labelpercn
@@ -161,7 +161,6 @@ def plotter():
     Handles = []
     force = False
     previouscolor = 0
-    allmaps = {}
     previousmap = None
     RawVersionFitler = []
 
@@ -203,12 +202,15 @@ def plotter():
         _Y = YCUR
         plotdraw(X,mapname)
 
+
+    othermapscreated = False
     if(type(previousmap) is not type(None) and len(TopMaps) != mapcount):
         force = True
+        othermapscreated = True
         _Y = np.ones((len(previousmap)), dtype=int)-previousmap
         plotdraw(X,"Other Maps")
         plt.title(f"Top {len(TopMaps)} Maps with keywords {p.OnlyMapsContaining} out of {mapcount}")
-        plt.legend(list(reversed(Handles)),list(reversed(Labels)))
+
         plt.grid(True)
 
     elif(mapcount == 0):
@@ -216,9 +218,21 @@ def plotter():
 
     else:
         plt.title(f"Top {len(TopMaps)} Maps with keywords {p.OnlyMapsContaining} out of {mapcount}")
-        plt.legend(list(reversed(Handles)),list(reversed(Labels)))
-        plt.grid(True)
 
+    legenddata = zip(Handles,Labels)
+    legenddata2 = [{"Handle":i,"Label":x[0],"Percentage":x[1]} for i,x in legenddata]
+    legenddata2.sort(key=lambda k : k['Percentage'])
+    legendlabels = [x["Label"] for x in legenddata2]
+    legendhandles = [x["Handle"] for x in legenddata2]
+
+    if(othermapscreated):
+        legendlabels.insert(0,legendlabels.pop(-1))
+        legendhandles.insert(0,legendhandles.pop(-1))
+    
+    
+       
+    plt.grid(True)   
+    plt.legend(legendhandles,legendlabels)
     dirname = os.path.dirname(os.path.realpath(__file__))
     rawfilename = os.path.join(dirname,p.Filenamepng)
     plt.savefig(rawfilename)
