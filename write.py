@@ -128,6 +128,8 @@ def MainWriter(isfast):
 # update is delay between each update where it looks for new servers. IT's very slow.
 # length determines how long the program runs for before automatically stopping. You can stop the program at any time.
 #Run MainWriter in fast/slow mode for n minutes
+
+#Do not touch the iterator parameters if you already have csv data. It will affect the data in unpredictable ways.
 def Iterator(delay=5,FastScansTillSlow=15):
 
     end = time() + p.RuntimeMinutes*60

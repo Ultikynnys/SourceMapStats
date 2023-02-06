@@ -11,6 +11,33 @@ import Parameters as p
 #The reader assumes that the CSV input dates are in this format.
 ReaderTimeFormat = '%Y-%m-%d-%H:%M:%S'
 #Makes a nice rainbow
+
+
+#An estimation of Daily Average count for a given gamemode in a given game. Average of Daily Averages using unique ips.
+#Takes into account writer pace and server count.
+def DailyAverage(dailydata):
+    totalsum = 0
+    for day in dailydata:
+        dailydict = {}
+        for datapoint in day:
+            dataip = str(datapoint[0])+":"+str(datapoint[1])
+            playercount = int(datapoint[3])
+            if(dataip in dailydict.keys()):
+                currplayer = dailydict[dataip]
+                dailydict.update({dataip:playercount+currplayer})
+            else:
+                dailydict.update({dataip:playercount})
+        RepaterCount = len(day)/len(dailydict.keys())
+
+        
+        #add the average playercount for the day into the total sum
+        totalsum+=sum(dailydict.values())/(RepaterCount)
+    #take the average of the totalsum relative to days
+    return round(totalsum/len(dailydata),p.Percision)
+
+
+
+
 def ColorGen():
     global previouscolor
     global force
@@ -37,7 +64,7 @@ def plotdraw(_X,_label):
         labelpercn = round(100-percentageSanity,p.Percision)
         Labels.append((f"{_label} : {labelpercn} %",labelpercn))
         previousmap = previousmap.tolist()
-        Handles.append(plt.bar(np.arange(len(_Y)),_Y, color=col,bottom=previousmap[0:len(_Y)]))
+        Handles.append(ax.bar(np.arange(len(_Y)),_Y, color=col,bottom=previousmap[0:len(_Y)],width=np.array(YMAX)/max(YMAX)))
         previousmap = previousmap+np.array(_Y)
         percentageSanity += labelpercn
         #print(percentageSanity)
@@ -47,31 +74,30 @@ def plotdraw(_X,_label):
         labelpercn = round(100*(sum(_Y)/sum(YMAX)),p.Percision)
         Labels.append((f"{_label} : {labelpercn} %",labelpercn))
         previousmap = previousmap.tolist()
-        Handles.append(plt.bar(np.arange(len(_Y)),_Y/YMAX, color=col,bottom=previousmap[0:len(_Y)]))
+        Handles.append(ax.bar(np.arange(len(_Y)),_Y/YMAX, color=col,bottom=previousmap[0:len(_Y)],width=np.array(YMAX)/max(YMAX)))
         previousmap = previousmap+np.array(_Y/YMAX)
         percentageSanity += labelpercn
 
     else:
         labelpercn = round(100*(sum(_Y)/sum(YMAX)),p.Percision)
         Labels.append((f"{_label} : {labelpercn} %",labelpercn))
-        Handles.append(plt.bar(np.arange(len(_Y)),_Y/YMAX, color=col))
+        Handles.append(ax.bar(np.arange(len(_Y)),_Y/YMAX, color=col,width=np.array(YMAX)/max(YMAX)))
         previousmap = np.array(_Y/YMAX)
         percentageSanity += labelpercn
 
 
-    
-    plt.yticks([0,.125,.25, 0.5,.75, 1], ['0%','12.5%','25%', '50%','75%', '100%'])
+    ax.set_yticks([0,.125,.25, 0.5,.75, 1], ['0%','12.5%','25%', '50%','75%', '100%'])
 
     dateformat = "%Y/%m/%d"
     xtimes = [datetime.strptime(y,ReaderTimeFormat).strftime(dateformat) for y in _X]
-    plt.xticks(np.linspace(plt.xlim()[0],plt.xlim()[1],len(xtimes)),xtimes)
+    ax.set_xticks(np.linspace(ax.get_xlim()[0],ax.get_xlim()[1],len(xtimes)),xtimes)
 #"Chunks" dates together and averages them into bars.
-def timechunker():
+def timechunker(AverageDays):
     startdateobject = datetime.strptime(p.Start_Date, '%Y-%m-%d')
     enddateobject = datetime.strptime(p.End_Date, '%Y-%m-%d')
     chunkedarray = []
     chunkedarray_index = 0
-    chunktime = timedelta(p.AverageDays,0,0,0,0,0,0)#Interval means days here
+    chunktime = timedelta(AverageDays,0,0,0,0,0,0)#Interval means days here
     initialtime = None
 
     dirname = os.path.dirname(os.path.realpath(__file__))
@@ -100,7 +126,7 @@ def timechunker():
             if(datetime_object > initialtime+chunktime):
                 chunkedarray_index += 1
                 while(datetime_object > initialtime+chunktime):
-                    chunktime += timedelta(p.AverageDays,0,0,0,0,0,0)
+                    chunktime += timedelta(AverageDays,0,0,0,0,0,0)
                     #print(chunktime)
 
     return chunkedarray
@@ -146,6 +172,8 @@ def SuffixFilter(x):
     return newname
 #Does the heavy lifting and makes sure that data is correct
 def plotter():
+    global fig
+    global ax
     global previousmap
     global previouscolor
     global mapcount
@@ -155,6 +183,8 @@ def plotter():
     global YMAX
     global _Y
     global percentageSanity
+
+    fig,ax = plt.subplots(figsize=p.OutputDimensions)
 
     percentageSanity = 0
     Labels = []
@@ -170,7 +200,8 @@ def plotter():
             RawVersionFitler.append(version+str(d))
     p.wordfilter.extend(RawVersionFitler)
 
-    predata = timechunker()
+    predata = timechunker(p.AverageDays)
+    DailyAverageVal = DailyAverage(timechunker(1))
     rawdata = SuffixRemover(predata)
     data = DuplicateMerger(rawdata)
     combineddata = dictmerger(data.values())
@@ -209,15 +240,15 @@ def plotter():
         othermapscreated = True
         _Y = np.ones((len(previousmap)), dtype=int)-previousmap
         plotdraw(X,"Other Maps")
-        plt.title(f"Top {len(TopMaps)} Maps with keywords {p.OnlyMapsContaining} out of {mapcount}")
+        ax.set_title(f"Top {len(TopMaps)} Maps with keywords {p.OnlyMapsContaining} out of {mapcount} \nBar width as relative Player count")
 
-        plt.grid(True)
+        ax.grid(True)
 
     elif(mapcount == 0):
-        plt.title(f"None maps found using keywords {p.OnlyMapsContaining}")
+        ax.set_title(f"None maps found using keywords {p.OnlyMapsContaining}")
 
     else:
-        plt.title(f"Top {len(TopMaps)} Maps with keywords {p.OnlyMapsContaining} out of {mapcount}")
+        ax.set_title(f"Top {len(TopMaps)} Maps with keywords {p.OnlyMapsContaining} out of {mapcount} \nBar width as relative Player count")
 
     legenddata = zip(Handles,Labels)
     legenddata2 = [{"Handle":i,"Label":x[0],"Percentage":x[1]} for i,x in legenddata]
@@ -230,14 +261,21 @@ def plotter():
         legendhandles.insert(0,legendhandles.pop(-1))
     
     
-       
-    plt.grid(True)   
-    plt.legend(legendhandles,legendlabels)
+    
+
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+    ax.text(0.05, 0.95, f'Average Daily Player Count : {DailyAverageVal}',
+    verticalalignment='bottom', horizontalalignment='left',
+    transform=ax.transAxes,
+    color='Black', fontsize=15)
+    ax.grid(True)      
+    ax.legend(legendhandles,legendlabels,framealpha=p.LabelTransparency,loc='center left', bbox_to_anchor=(1, 0.5))
     dirname = os.path.dirname(os.path.realpath(__file__))
     rawfilename = os.path.join(dirname,p.Filenamepng)
-    plt.savefig(rawfilename)
-    plt.show()
 
+    fig.savefig(rawfilename)
+    plt.show()
 #init
 if __name__ == "__main__":
     plotter()

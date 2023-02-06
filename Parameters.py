@@ -15,13 +15,15 @@ wordfilter = ["fix","final","redux","finished","remake","optimized","finalplus",
 versionfilter = ["v","b","a","rc","x","f"] #Will not consider maps with these version suffixes to be unique. "v" would mean v0-v99,v and 0v-99v
 
 #Advanced Parameters
+OutputDimensions = (12,6)
+LabelTransparency = 0.5
 Percision = 1 #How many digits to display in map labels for percentage
 timeout_query = 1 #How long to wait for each individual server to respond during slow search
 timeout_master = 1 #How long to wait for the master server to respond during slow search
 regionserver= "all" #Looks for servers in a specfic region
 RuntimeMinutes = 60 #for how many minutes to run.
 RunForever = True #True will run forever. Set to False to use runtime 
-AverageDays = 2 #how many days each bar represents
+AverageDays = 1 #how many days each bar represents
 ColorForOtherMaps = (0.5,0.5,0.5) # Color of the "Other Maps bars"
 ColorIntensity = 25 # Changes the rate at which the colors change Low being very small changes and High being very big changes.
 XaxisDates = 5 #How many dates to show in the figure. Maximum is the amount of bars. Minimum is 2
