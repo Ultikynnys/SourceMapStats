@@ -1,6 +1,5 @@
 import operator
 import numpy as np
-from collections import OrderedDict
 def arraypadder(arr1,arr2):
     arr1 = list(arr1)
     arr2 = list(arr2)
@@ -75,4 +74,3 @@ def dictlimx(dict1,keylist): # remove keyvalue pairs not in keylist
             x = dict1[key]
             dict2.update({key:x})
     return dict2
-

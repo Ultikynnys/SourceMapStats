@@ -3,7 +3,6 @@ from math import pi
 import numpy as np
 import csv
 import re
-from statistics import mean 
 from datetime import datetime, timedelta
 import os
 from R6LIB import dictmerger,dictmax,dictlimx,arrayrectifier,weakfiller
@@ -29,19 +28,35 @@ def ColorGen():
         col = p.ColorForOtherMaps
     return col
 #Using MatPlotLib this will draw the actual visual side of the output.
-def plotdraw(_X,_Y,_label):
-    Labels.append(f"{_label} : {round(100*mean(_Y),1)} %")
+def plotdraw(_X,_label):
     global previousmap
+    global percentageSanity
     col = ColorGen()
 
-    if(type(previousmap) is not type(None)):
+    if(force):
+        labelpercn = round(100-percentageSanity,p.Percision)
+        Labels.append(f"{_label} : {labelpercn} %")
         previousmap = previousmap.tolist()
         Handles.append(plt.bar(np.arange(len(_Y)),_Y, color=col,bottom=previousmap[0:len(_Y)]))
-        previousmap = previousmap[0:len(_Y)]+np.array(_Y)
+        previousmap = previousmap+np.array(_Y)
+        percentageSanity += labelpercn
+        #print(percentageSanity)
+
+
+    elif(type(previousmap) is not type(None)):
+        labelpercn = round(100*(sum(_Y)/sum(YMAX)),p.Percision)
+        Labels.append(f"{_label} : {labelpercn} %")
+        previousmap = previousmap.tolist()
+        Handles.append(plt.bar(np.arange(len(_Y)),_Y/YMAX, color=col,bottom=previousmap[0:len(_Y)]))
+        previousmap = previousmap+np.array(_Y/YMAX)
+        percentageSanity += labelpercn
 
     else:
-        Handles.append(plt.bar(np.arange(len(_Y)),_Y, color=col))
-        previousmap = np.array(_Y)
+        labelpercn = round(100*(sum(_Y)/sum(YMAX)),p.Percision)
+        Labels.append(f"{_label} : {labelpercn} %")
+        Handles.append(plt.bar(np.arange(len(_Y)),_Y/YMAX, color=col))
+        previousmap = np.array(_Y/YMAX)
+        percentageSanity += labelpercn
 
 
     
@@ -137,7 +152,11 @@ def plotter():
     global force
     global Labels
     global Handles
+    global YMAX
+    global _Y
+    global percentageSanity
 
+    percentageSanity = 0
     Labels = []
     Handles = []
     force = False
@@ -180,13 +199,14 @@ def plotter():
 
     #create a filler for the other maps not displayed
     NAMEY = zip(TopMaps,Transpose_YLIST)
-    for mapname,_Y in NAMEY:
-        _YNORMALIZED = _Y/YMAX
-        plotdraw(X,_YNORMALIZED,mapname)
+    for mapname,YCUR in NAMEY:
+        _Y = YCUR
+        plotdraw(X,mapname)
 
     if(type(previousmap) is not type(None) and len(TopMaps) != mapcount):
         force = True
-        plotdraw(X,np.ones((len(previousmap)), dtype=int)-previousmap,"Other Maps")
+        _Y = np.ones((len(previousmap)), dtype=int)-previousmap
+        plotdraw(X,"Other Maps")
         plt.title(f"Top {len(TopMaps)} Maps with keywords {p.OnlyMapsContaining} out of {mapcount}")
         plt.legend(list(reversed(Handles)),list(reversed(Labels)))
         plt.grid(True)

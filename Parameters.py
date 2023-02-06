@@ -15,6 +15,7 @@ wordfilter = ["fix","final","redux","finished","remake","optimized","finalplus",
 versionfilter = ["v","b","a","rc","x","f"] #Will not consider maps with these version suffixes to be unique. "v" would mean v0-v99,v and 0v-99v
 
 #Advanced Parameters
+Percision = 1 #How many digits to display in map labels for percentage
 timeout_query = 1 #How long to wait for each individual server to respond during slow search
 timeout_master = 1 #How long to wait for the master server to respond during slow search
 regionserver= "all" #Looks for servers in a specfic region
