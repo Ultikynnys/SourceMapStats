@@ -8,6 +8,21 @@ import csv
 import re
 from time import time,sleep
 import Parameters as p
+import argparse
+
+#Arguments
+parser = argparse.ArgumentParser(description="SourceMapStats writer. Defaults in parameter.py",formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument("-g", "--game", type=str, help="Master server to use",default=p.Game)
+parser.add_argument("-gm", "--gamemode", type=str, help="Gamemode dr_,pl_,ctf_",default=p.Gamemode)
+parser.add_argument("-f", "--filename", type=str, help="filename including suffix.",default=p.Filename)
+parser.add_argument("-r", "--region", type=str, help="filename including suffix.",default=p.regionserver)
+parser.add_argument("-st", "--servertimeout", type=str, help="filename including suffix.",default=p.timeout_query)
+parser.add_argument("-mst", "--masterservertimeout", type=str, help="filename including suffix.",default=p.timeout_master)
+parser.add_argument("-rf", "--runforever", type=bool, help="Run the writer forever.",default=p.RunForever)
+parser.add_argument("-tm", "--timer", type=str, help="For how many minutes to run if runforever is False.",default=p.RuntimeMinutes)
+args = parser.parse_args()
+config = vars(args)
+
 
 #Manually adding submodule path from this path
 dirname = os.path.dirname(os.path.realpath(__file__))
@@ -22,48 +37,94 @@ import valve.source.messages
 
 #The Writer will create the .csv dates in this format. DO not change if you already have a .csv
 #Having multiple date formats in a single .csv will corrupt the .csv data.
-WriterTimeFormat = '%Y-%m-%d-%H:%M:%S'
+#00 IN THE CSV means that the country could not get fetched for some reason. Possibly due to too many queries to the server
+# Scan index is a counter that goes up with each scan instance. It is needed for calculating average playercount
+
+
+x = 0 # Servers
+y = 0 # Broken Servers
+z = 0 # Timeouts
+w = 0 # Acceptable Servers
 #Ensures that the gamemode is correct
 def PrefixEnsure(string):
     prefix = re.split("_",string)[0].lower()+"_" 
-    if(prefix == p.Gamemode.lower()):
+    if(prefix == config["gamemode"].lower()):
         return True
     else:
         return False
 #Scan all possible servers in the game for map matches.
+
+def IpReader(IP):#returns datastack
+    global x,y,z,w
+    global internalips
+    global averagelist
+    try:
+        x += 1
+
+        server = a2s.info(IP,timeout=config["servertimeout"])
+        datastack = [IP[0],IP[1],server.map_name,server.player_count]
+
+        if PrefixEnsure(datastack[2]):
+            averagelist.append(datastack[3])
+            datastack.append(datetime.datetime.now().strftime(WriterTimeFormat))
+            internalips.append(f'!!!!{datastack} has been added')
+            w += 1
+            try:
+                response = requests.get(f"http://ip-api.com/json/{IP[0]}").json()
+                region = response["countryCode"]
+            except:
+                region = "00"
+            datastack.append(region)
+            return datastack
+
+    except (AttributeError,a2s.BrokenMessageError):
+        y += 1
+
+    except socket.timeout:
+        z += 1
+
+    os.system('cls')
+    print(internalmode)
+    print("**************")
+    print(f"Playercount for gamemode {config['gamemode']}: {sum(averagelist)}")
+    print(f"Servers scanned : {x}")
+    print(f"Acceptable servers : {w}")
+    print(f"Server errors : {y}")
+    print(f"Timeouts : {z}")
+    print(f"scan index : {MaxStep}")
+    print("**************")
+    try:
+        print(datastack)
+    except:
+        print("NONE")
+    
+    for inp in internalips:
+        print(inp)
+
 def SlowScan():
-    x = 0 # Servers
-    y = 0 # Broken Servers
-    z = 0 # Timeouts
+    global internalips
+    global x,y,z,w
     ips = []
-    with valve.source.master_server.MasterServerQuerier(timeout=p.timeout_master) as msq:
+    with valve.source.master_server.MasterServerQuerier(timeout=config["masterservertimeout"]) as msq:
         try:
-            for address in msq.find(gamedir=p.Game,empty=True,secure=True,region=p.regionserver):
-                print(address)
-                try:
-                    server = a2s.info(address,timeout=p.timeout_query)
-
-                    datastack = [address[0],address[1],server.map_name,server.player_count]
-                    if PrefixEnsure(datastack[2]):
-                        datastack.append(datetime.datetime.now().strftime(WriterTimeFormat))
-                        print(f'!!!!{datastack} has been added')
-                        response = requests.get(f"http://ip-api.com/json/{address[0]}").json()
-                        region = response["countryCode"]
-                        datastack.append(region)
-                        ips.append(datastack)
-                        x += 1
-                except (AttributeError,a2s.BrokenMessageError):
-                    y += 1
-                except socket.timeout:
-                    z += 1
-                print(f"{x}:servers {y}:server errors {z}:timeouts")
-
-            print("__________")
-            return ips
+            return [address for address in msq.find(gamedir=config["game"],empty=True,secure=True,region=config['region'])]
         except valve.source.NoResponseError:
             print("Master server request timed out!")
+
+
+def ScanMaxStep():
+    global MaxStep
+    MaxStep = 0
+    with open(rawfilename,"r") as filedata:
+        csvreader = csv.reader(filedata)
+        for row in csvreader:
+            if(len(row) == 7 and MaxStep<int(row[6])):
+                MaxStep = int(row[6])
+    
+
 #Writes the incoming datastack to a csv line.
 def CSVWriter(list):
+    global MaxStep
     try:
         with open(rawfilename,"r") as filedata:
             print("read successful")
@@ -72,81 +133,62 @@ def CSVWriter(list):
             print("NO FILE, MAKING NEW")
 
     with open(rawfilename,"a",newline="") as filedata:
-            for ip in list:
-                csv.writer(filedata).writerow(ip)
+        MaxStep += 1
+        for ip in list:
+            csv.writer(filedata).writerow(ip+[MaxStep])#Index used for calculating averages for playercount
+
 # First part of FastScan. Searches for IP's in the CSV.
 def FastScan():
     iplist = []
+    global internalips
     with open(rawfilename,"r") as filedata:
         csvreader = csv.reader(filedata)
         for ip in csvreader:
-            if (ip[0],ip[1]) not in iplist:
-                iplist.append((ip[0],ip[1]))
-    print("#################################################")
-    print(iplist)
-    print("######## SERVERS FOUND FROM CSV #################")
+            if (ip[0],int(ip[1])) not in iplist:
+                iplist.append((ip[0],(int(ip[1]))))
     return iplist
 # Second part of fast scan. searches servers using incoming list.
-def IpScan(list_ips=[]):
-    x = 0 # Servers
-    y = 0 # Broken Servers
-    z = 0 # Timeouts
+def IpReaderMulti(list_ips=[]):
+    global w,y,z
+    global internalips
+    global averagelist
+    averagelist = []
+    w,y,z = 0,0,0
+    internalips = []
     ips = []
     try:
         for address in list_ips:
-            fix_address = (address[0],int(address[1]))
-            try:
-                server = a2s.info(fix_address,timeout=p.timeout_query)
-
-                datastack = [address[0],fix_address[1],server.map_name,server.player_count]
-                if PrefixEnsure(datastack[2]):
-                    datastack.append(datetime.datetime.now().strftime(WriterTimeFormat))
-                    print(f'!!!!{datastack} has been added')
-                    response = requests.get(f"http://ip-api.com/json/{address[0]}").json()
-                    region = response["countryCode"]
-                    datastack.append(region)
-                    ips.append(datastack)
-                    x += 1
-
-            except (AttributeError,a2s.BrokenMessageError):
-                y += 1
-            except socket.timeout:
-                z += 1
-
+            datastack = IpReader(address)
+            if(datastack != None):
+                ips.append(datastack)
         return ips
-        
     except valve.source.NoResponseError:
         print("Master server request timed out!")
-# Runs in slow mode first to create initial server list, then in fast mode. Running in slowmode afterwards increase the sever pool that fast mode scans for.
-def MainWriter(isfast):
-    if isfast == True:
-        CSVWriter(IpScan(FastScan()))
-    elif isfast == False:
-        CSVWriter(SlowScan())
-# delay is time between each fast search
-# update is delay between each update where it looks for new servers. IT's very slow.
-# length determines how long the program runs for before automatically stopping. You can stop the program at any time.
-#Run MainWriter in fast/slow mode for n minutes
 
 #Do not touch the iterator parameters if you already have csv data. It will affect the data in unpredictable ways.
 def Iterator(delay=5,FastScansTillSlow=15):
-
-    end = time() + p.RuntimeMinutes*60
-    x = FastScansTillSlow
-    while time() < end or p.RunForever:
-        if x >= FastScansTillSlow:
-            print(f"Initiate SLOW SEARCH. This will run every {FastScansTillSlow*delay} minutes")
-            MainWriter(False)
-            x = 0
+    global internalmode
+    global WriterTimeFormat
+    internalmode = ""
+    WriterTimeFormat = '%Y-%m-%d-%H:%M:%S'
+    end = time() + config['timer']*60
+    InternalPoint = FastScansTillSlow
+    while time() < end or config['runforever']:
+        if InternalPoint >= FastScansTillSlow:
+            ScanMaxStep()
+            internalmode = f"SLOW SEARCH : I scan the MASTERSERVER every {FastScansTillSlow*delay} minutes"
+            CSVWriter(IpReaderMulti(SlowScan()))
+            InternalPoint = 0
         else:
-            print("Initiate FAST SEARCH. I scan the CSV for servers instead")
-            MainWriter(True)
-            x += 1
+            ScanMaxStep()
+            internalmode = f"FAST SEARCH : I scan the CSV for servers instead"
+            CSVWriter(IpReaderMulti(FastScan()))
+            InternalPoint += 1
             print(f"taking a break for {delay} minutes")
             sleep(delay*60)
 
-    print(f"{p.RuntimeMinutes} : minutes complete")
+    print( f"{config['timer']} : minutes complete")
 #init
 if __name__ == "__main__":
-    rawfilename = os.path.join(dirname,p.Filename)
+    rawfilename = os.path.join(dirname,config['filename'])
     Iterator()
