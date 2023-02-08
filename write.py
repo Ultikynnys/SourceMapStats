@@ -74,7 +74,7 @@ def CSVWriter(list):
     with open(rawfilename,"a",newline="") as filedata:
             for ip in list:
                 csv.writer(filedata).writerow(ip)
-# Scans unique Ip's in .cvs file and appends new data to the list Much faster than scanning all the servers
+# First part of FastScan. Searches for IP's in the CSV.
 def FastScan():
     iplist = []
     with open(rawfilename,"r") as filedata:
@@ -86,8 +86,8 @@ def FastScan():
     print(iplist)
     print("######## SERVERS FOUND FROM CSV #################")
     return iplist
-# First part of FastScan. Searches for IP's in the CSV.
-def Listscan(list_ips=[]):
+# Second part of fast scan. searches servers using incoming list.
+def IpScan(list_ips=[]):
     x = 0 # Servers
     y = 0 # Broken Servers
     z = 0 # Timeouts
@@ -105,7 +105,7 @@ def Listscan(list_ips=[]):
                     response = requests.get(f"http://ip-api.com/json/{address[0]}").json()
                     region = response["countryCode"]
                     datastack.append(region)
-                    ips.applenamepngend(datastack)
+                    ips.append(datastack)
                     x += 1
 
             except (AttributeError,a2s.BrokenMessageError):
@@ -120,8 +120,7 @@ def Listscan(list_ips=[]):
 # Runs in slow mode first to create initial server list, then in fast mode. Running in slowmode afterwards increase the sever pool that fast mode scans for.
 def MainWriter(isfast):
     if isfast == True:
-        a = Listscan(list_ips=FastScan())
-        CSVWriter(a)
+        CSVWriter(IpScan(FastScan()))
     elif isfast == False:
         CSVWriter(SlowScan())
 # delay is time between each fast search
