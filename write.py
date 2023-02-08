@@ -24,6 +24,16 @@ args = parser.parse_args()
 config = vars(args)
 
 
+def clear(): 
+
+    # for windows 
+    if os.name == 'nt': 
+        _ = os.system('cls') 
+
+    # for mac and linux(here, os.name is 'posix') 
+    else: 
+        _ = os.system('clear') 
+
 #Manually adding submodule path from this path
 dirname = os.path.dirname(os.path.realpath(__file__))
 importfilepath = os.path.join(dirname,"python-valve")
@@ -83,7 +93,7 @@ def IpReader(IP):#returns datastack
     except socket.timeout:
         z += 1
 
-    os.system('cls')
+    clear()
     print(internalmode)
     print("**************")
     print(f"Playercount for gamemode {config['gamemode']}: {sum(averagelist)}")
