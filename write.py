@@ -125,12 +125,16 @@ def SlowScan():
 def ScanMaxStep():
     global MaxStep
     MaxStep = 0
-    with open(rawfilename,"r") as filedata:
-        csvreader = csv.reader(filedata)
-        for row in csvreader:
-            if(len(row) == 7 and MaxStep<int(row[6])):
-                MaxStep = int(row[6])
-    
+    try:
+        with open(rawfilename,"r") as filedata:
+            csvreader = csv.reader(filedata)
+            for row in csvreader:
+                if(len(row) == 7 and MaxStep<int(row[6])):
+                    MaxStep = int(row[6])
+    except:
+        with open(rawfilename,"w",newline="") as filedata:
+            print("NO FILE, MAKING NEW")
+            csv.writer(filedata)
 
 #Writes the incoming datastack to a csv line.
 def CSVWriter(list):
