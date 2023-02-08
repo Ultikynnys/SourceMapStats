@@ -50,10 +50,10 @@ def IndexAverage(Rawdata):
         except:
             None
 
-            if(len(ScanAverage) != 0):
-                return round(sum(ScanAverage)/len(ScanAverage),config['percision'])
-            else:
-                return 0
+    if(len(ScanAverage) != 0):
+        return round(sum(ScanAverage)/len(ScanAverage),config['percision'])
+    else:
+        return 0
         
 
     
