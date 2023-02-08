@@ -88,13 +88,15 @@ def plotdraw(_X,_label):
 
     global previousmap
     global percentageSanity
+    global otherhandle
+    global otherlabel
     col = ColorGen()
 
     if(force):
         labelpercn = round(100-percentageSanity,config['percision'])
-        Labels.append((f"{_label} : {labelpercn} %",labelpercn))
+        otherlabel = ((f"{_label} : {labelpercn} %",labelpercn))
         previousmap = previousmap.tolist()
-        Handles.append(ax.bar(np.arange(len(_Y)),_Y, color=col,bottom=previousmap[0:len(_Y)],width=np.array(YMAX)/max(YMAX)))
+        otherhandle = (ax.bar(np.arange(len(_Y)),_Y, color=col,bottom=previousmap[0:len(_Y)],width=np.array(YMAX)/max(YMAX)))
         previousmap = previousmap+np.array(_Y)
         percentageSanity += labelpercn
 
@@ -208,6 +210,8 @@ def plotter():
     global _Y
     global percentageSanity
     global CSVDATA
+    global otherhandle
+    global otherlabel
     CSVDATA = RawData()
     fig,ax = plt.subplots(figsize=config['outputdimensions'])
 
@@ -292,12 +296,13 @@ def plotter():
     legenddata = zip(Handles,Labels)
     legenddata2 = [{"Handle":i,"Label":x[0],"Percentage":x[1]} for i,x in legenddata]
     legenddata2.sort(key=lambda k : k['Percentage'])
-    legendlabels = [x["Label"] for x in legenddata2]
-    legendhandles = [x["Handle"] for x in legenddata2]
-
-    if(othermapscreated):
-        legendlabels.insert(0,legendlabels.pop(-1))
-        legendhandles.insert(0,legendhandles.pop(-1))
+    try:
+        legendlabels = [otherlabel[0]]+[x["Label"] for x in legenddata2]
+        legendhandles = [otherhandle]+[x["Handle"] for x in legenddata2]
+    except:
+        legendlabels = [x["Label"] for x in legenddata2]
+        legendhandles = [x["Handle"] for x in legenddata2]
+    
     
     
     print("STEP 7")
