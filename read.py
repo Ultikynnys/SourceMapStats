@@ -39,14 +39,14 @@ def IndexAverage(Rawdata):
         try:
             curint = int(scan[6])
             if(CurrentScanIndex == curint):
-                CurrentScanIndexlist.append(curint)
+                CurrentScanIndexlist.append(scan[3])
             else:
                 sumR = sum(CurrentScanIndexlist)
                 if(sumR != 0):
                     ScanAverage.append(sum(CurrentScanIndexlist))
                 CurrentScanIndexlist = []
                 CurrentScanIndex = curint
-                CurrentScanIndexlist.append(curint)
+                CurrentScanIndexlist.append(scan[3])
         except:
             None
 
@@ -319,4 +319,3 @@ def plotter():
 #init
 if __name__ == "__main__":
     plotter()
-    os.system("PAUSE")
