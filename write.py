@@ -50,11 +50,6 @@ import valve.source.messages
 #00 IN THE CSV means that the country could not get fetched for some reason. Possibly due to too many queries to the server
 # Scan index is a counter that goes up with each scan instance. It is needed for calculating average playercount
 
-
-x = 0 # Servers
-y = 0 # Broken Servers
-z = 0 # Timeouts
-w = 0 # Acceptable Servers
 #Ensures that the gamemode is correct
 def PrefixEnsure(string):
     prefix = re.split("_",string)[0].lower()+"_" 
@@ -92,6 +87,8 @@ def IpReader(IP):#returns datastack
 
     except socket.timeout:
         z += 1
+    except:
+        print("Unknown Error")
 
     clear()
     print(internalmode)
@@ -118,7 +115,7 @@ def SlowScan():
     with valve.source.master_server.MasterServerQuerier(timeout=config["masterservertimeout"]) as msq:
         try:
             return [address for address in msq.find(gamedir=config["game"],empty=True,secure=True,region=config['region'])]
-        except valve.source.NoResponseError:
+        except:
             print("Master server request timed out!")
 
 
@@ -163,11 +160,11 @@ def FastScan():
     return iplist
 # Second part of fast scan. searches servers using incoming list.
 def IpReaderMulti(list_ips=[]):
-    global w,y,z
+    global w,y,z,x
     global internalips
     global averagelist
     averagelist = []
-    w,y,z = 0,0,0
+    w,y,z,x = 0,0,0,0
     internalips = []
     ips = []
     try:
@@ -176,7 +173,7 @@ def IpReaderMulti(list_ips=[]):
             if(datastack != None):
                 ips.append(datastack)
         return ips
-    except valve.source.NoResponseError:
+    except:
         print("Master server request timed out!")
 
 #Do not touch the iterator parameters if you already have csv data. It will affect the data in unpredictable ways.
@@ -198,7 +195,8 @@ def Iterator(delay=5,FastScansTillSlow=15):
             internalmode = f"FAST SEARCH : I scan the CSV for servers instead"
             CSVWriter(IpReaderMulti(FastScan()))
             InternalPoint += 1
-            print(f"taking a break for {delay} minutes")
+            clear()
+            print(f"Search Complete! Taking a break for {delay} minutes")
             sleep(delay*60)
 
     print( f"{config['timer']} : minutes complete")

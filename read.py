@@ -232,10 +232,10 @@ def plotter():
     config['filter'].extend(RawVersionFitler)
     print("STEP 2")
     predata = timechunker(config['averagedays'])
-    print("STEP 2.2")
+    print("STEP 3")
     DailyAverageVal = IndexAverage(CSVDATA)
     
-    print("STEP 2.5")
+    print("STEP 4")
 
     rawdata = SuffixRemover(predata)
     data = DuplicateMerger(rawdata)
@@ -246,7 +246,7 @@ def plotter():
     TopMaps = dictmax(FilteredMaps,config["mapstoshow"])
 
 
-    print("STEP 3")
+    print("STEP 5")
 
     YDICT = [dictlimx(datachunk,TopMaps) for datachunk in data.values()]
     YLIST = arrayrectifier([list(x.values()) for x in YDICT])
@@ -256,7 +256,7 @@ def plotter():
     XaxisDates2 = config['axisdates']-1
     X = []
 
-    print("STEP 4")
+    print("STEP 6")
     if(XaxisDates2<1):
         XaxisDates2 = 1
 
@@ -273,7 +273,7 @@ def plotter():
         _Y = YCUR
         plotdraw(X,mapname)
 
-    print("STEP 5")
+    print("STEP 7")
     othermapscreated = False
     if(type(previousmap) is not type(None) and len(TopMaps) != mapcount):
         force = True
@@ -291,7 +291,7 @@ def plotter():
         ax.set_title(f"Top {len(TopMaps)} Maps with keywords {config['onlymaps']} out of {mapcount} \nBar width as relative Player count")
 
 
-    print("STEP 6")
+    print("STEP 8")
 
     legenddata = zip(Handles,Labels)
     legenddata2 = [{"Handle":i,"Label":x[0],"Percentage":x[1]} for i,x in legenddata]
@@ -305,7 +305,7 @@ def plotter():
     
     
     
-    print("STEP 7")
+    print("STEP 9")
 
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
