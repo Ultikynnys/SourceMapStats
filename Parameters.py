@@ -2,6 +2,7 @@
 Game = "tf" # cstrike,tf,hl2,hl2mp,csgo
 Gamemode = "dr_"# Gamemode dr_,pl_,ctf_
 Filename = "output.csv" #file to read and write
+Filelog = "stats.log" #file to read and write
 Filenamepng = "output.png" #name of the figure
 MapsToShow = 15 #How many maps to show in order of popularity
 

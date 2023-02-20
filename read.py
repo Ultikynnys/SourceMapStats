@@ -13,6 +13,7 @@ import argparse
 #Arguments
 parser = argparse.ArgumentParser(description="SourceMapStats reader. Defaults in parameter.py",formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("-f", "--filename", type=str, help="Filename for reading",default=p.Filename)
+parser.add_argument("-log", "--filelog", type=str, help="Filename for writing text stats",default=p.Filelog)
 parser.add_argument("-fp", "--filenamepng", type=str, help="Output png of bar graphs",default=p.Filenamepng)
 parser.add_argument("-mts", "--mapstoshow", type=int, help="How many maps to show",default=p.MapsToShow)
 parser.add_argument("-sd", "--startdate", type=str, help="Specify start date of data",default=p.Start_Date)
@@ -297,8 +298,7 @@ def plotter():
     print("STEP 8")
 
     legenddata = zip(Handles,Labels)
-    legenddata2 = [{"Handle":i,"Label":x[0],"Percentage":x[1]} for i,x in legenddata]
-    legenddata2.sort(key=lambda k : k['Percentage'])
+    legenddata2 = list(reversed([{"Handle":i,"Label":x[0],"Percentage":x[1]} for i,x in legenddata]))
     try:
         legendlabels = [otherlabel[0]]+[x["Label"] for x in legenddata2]
         legendhandles = [otherhandle]+[x["Handle"] for x in legenddata2]
@@ -309,6 +309,11 @@ def plotter():
     
     
     print("STEP 9")
+
+    with open(config["filelog"], 'w') as f:#writes the text file
+        for label in legendlabels:
+            f.write(label)
+            f.write('\n')
 
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
