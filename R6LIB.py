@@ -59,13 +59,15 @@ def dictmerger(dictlist):
     return dict2
 
 def dictmax(dict1,ammount): # get biggest values from dict in order from biggest to smallest
-    tempdict = dict1
-    maxrray = []
-    for i in range(ammount):
-        if(len(tempdict.items()) != 0):
-            maxrray.append(max(tempdict.items(), key=operator.itemgetter(1))[0])
-            tempdict.pop(maxrray[-1])
-    return maxrray
+    dict1 = {k: v for k, v in sorted(dict1.items(), key=lambda item: item[1],reverse=True)}
+    return list(dict1.keys())[0:ammount]
+    
+def dictpadder(dict1,keylist):#makes sure that keylist exists in dict. Then sorts
+    _dict1 = dict1.copy()
+    for i in keylist:
+        _dict1[i] = _dict1.get(i, 0)
+    #return {k: v for k, v in sorted(dict1.items(), key=lambda item: item[1],reverse=True)}
+    return _dict1
 
 def dictlimx(dict1,keylist): # remove keyvalue pairs not in keylist
     dict2 = {}
@@ -74,3 +76,4 @@ def dictlimx(dict1,keylist): # remove keyvalue pairs not in keylist
             x = dict1[key]
             dict2.update({key:x})
     return dict2
+

@@ -3,7 +3,7 @@ Game = "tf" # cstrike,tf,hl2,hl2mp,csgo
 Gamemode = "dr_"# Gamemode dr_,pl_,ctf_
 Filename = "output.csv" #file to read and write
 Filenamepng = "output.png" #name of the figure
-MapsToShow = 5 #How many maps to show in order of popularity
+MapsToShow = 15 #How many maps to show in order of popularity
 
 #Reader date range to read
 Start_Date = "2001-10-02" #date range to use
@@ -17,7 +17,7 @@ versionfilter = ["v","b","a","rc","x","f"] #Will not consider maps with these ve
 #Advanced Parameters
 OutputDimensions = (12,6)
 LabelTransparency = 0.5
-Percision = 1 #How many digits to display in map labels for percentage
+Percision = 2 #How many digits to display in map labels for percentage
 timeout_query = 1 #How long to wait for each individual server to respond during slow search
 timeout_master = 1 #How long to wait for the master server to respond during slow search
 regionserver= "all" #Looks for servers in a specfic region

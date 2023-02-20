@@ -6,7 +6,7 @@ import csv
 import re
 from datetime import datetime, timedelta
 import os
-from R6LIB import dictmerger,dictmax,dictlimx,arrayrectifier,weakfiller
+from R6LIB import *
 import Parameters as p
 import argparse
 
@@ -238,25 +238,28 @@ def plotter():
     print("STEP 4")
 
     rawdata = SuffixRemover(predata)
-    data = DuplicateMerger(rawdata)
-    combineddata = dictmerger(data.values())
+    nonsquaredata = DuplicateMerger(rawdata)
+    combineddata = dictmerger(nonsquaredata.values())
     mapcount = len(combineddata)
     WhiteListedData = (weakfiller(combineddata,config["onlymaps"]))
     FilteredMaps = dictlimx(combineddata,WhiteListedData)
     TopMaps = dictmax(FilteredMaps,config["mapstoshow"])
+    squareddata = {datex[0]:dictpadder(datex[1],TopMaps) for datex in nonsquaredata.items()}#Adds zeroes to maps that do not have any data
 
 
     print("STEP 5")
-
-    YDICT = [dictlimx(datachunk,TopMaps) for datachunk in data.values()]
+    YDICT = [dictlimx(datachunk,TopMaps) for datachunk in squareddata.values()]
     YLIST = arrayrectifier([list(x.values()) for x in YDICT])
     Transpose_YLIST = np.array(np.transpose(YLIST))
-    YMAX = [sum(x.values()) for x in data.values()]#max player count for each bar ascending order by date
-    timerange = list(data.keys())#from earliest to latest dates in
+    YMAX = [sum(x.values()) for x in squareddata.values()]#max player count for each bar ascending order by date
+
+
+    print("STEP 6")
+
+    timerange = list(squareddata.keys())#from earliest to latest dates in
     XaxisDates2 = config['axisdates']-1
     X = []
 
-    print("STEP 6")
     if(XaxisDates2<1):
         XaxisDates2 = 1
 
