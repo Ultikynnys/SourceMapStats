@@ -10,10 +10,10 @@ MapsToShow = 15 #How many maps to show in order of popularity
 Start_Date = "2001-10-02" #date range to use
 End_Date = "2040-10-02"  #date range to use
 
-#Reader Filters
-OnlyMapsContaining = [""] # [""] means all maps. EX.["Playstation","Bazinga","Lazy"] or gamemodes like ["ze_"]
-wordfilter = ["fix","final","redux","finished","remake","optimized","finalplus","mini"] #Will not consider maps with these additional words to be unique
-versionfilter = ["v","b","a","rc","x","f"] #Will not consider maps with these version suffixes to be unique. "v" would mean v0-v99,v and 0v-99v
+#Filters for fixing the map names
+versionfilter = "abcvdf" # looks for version names with the following letters. Ex. "a" would look for a0-9 or 0-9a
+wordfilter = "final|redux|rc|test|fix|skial|censored|blw|vrs|alpha|beta|fin" #Suffixes to remove Ex. Final
+OnlyMapsContaining = [""] #Empty for all maps. Only show maps containing string value Ex. ["Bazinga","Playstation"]
 
 #Advanced Parameters
 OutputDimensions = (12,6)

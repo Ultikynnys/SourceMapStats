@@ -160,6 +160,8 @@ def timechunker(AverageDays):
 def SuffixRemover(data):
     for timelist in data:
         for row in timelist:
+            if(SuffixFilter(row[2]) == "dr"):
+                print("NULLMAP")
             row[2] = SuffixFilter(row[2])
     return data
 #Merges maps that are to be considered the same map.
@@ -174,28 +176,14 @@ def DuplicateMerger(data):
             else:
                 datatemp2[firsttime].update({row[2]:int(row[3])})#adds a new dict with the player count
     return datatemp2
-#Removes worfilter suffixes from input strings
-def SuffixFilter(x):
-    newname = ""
-    prefix = re.split("_",x)[0]
-    y = re.search(prefix,x).start()
-    z = x[y:]
-    e = z.split("_")
-
-    for n in config['filter']:
-        for idx, n2 in enumerate(e):
-            if(n == n2 or n == n2[::-1]):
-                e.pop(idx)
-            elif(n in n2 and len(n)>1):
-                e.pop(idx)
-    
-    for e2 in e:
-        if(newname != ""):
-            newname += f"_{e2}"
-        else:
-            newname +=e2
-
-    return newname
+def SuffixFilter(_RawMapName):
+    RegexCutter = r"(dr_[a-zA-Z0-9]*)(?:_([a-zA-Z0-9]*))?"
+    FilterPattern = r'(?:['+p.versionfilter+r']\d)|(?:\d['+p.versionfilter+r'])|(?:'+p.wordfilter+r')'
+    m = re.match(RegexCutter, _RawMapName)
+    if(m[2] == None or re.search(FilterPattern,m[2].lower())):
+        return m[1]
+    else:
+        return m[1]+"_"+m[2]
 #Does the heavy lifting and makes sure that data is correct
 def plotter():
     print("START")
@@ -222,15 +210,9 @@ def plotter():
     force = False
     previouscolor = 0
     previousmap = None
-    RawVersionFitler = []
 
 
     print("STEP 1")
-    for version in config['versionfilter']:
-        RawVersionFitler.append(version)
-        for d in range(10):
-            RawVersionFitler.append(version+str(d))
-    config['filter'].extend(RawVersionFitler)
     print("STEP 2")
     predata = timechunker(config['averagedays'])
     print("STEP 3")
@@ -312,7 +294,7 @@ def plotter():
 
     with open(config["filelog"], 'w') as f:#writes the text file
         for label in legendlabels:
-            f.write(label)
+            f.write(f"{label}")
             f.write('\n')
 
     box = ax.get_position()

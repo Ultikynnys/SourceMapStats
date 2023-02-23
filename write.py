@@ -10,6 +10,9 @@ from time import time,sleep
 import Parameters as p
 import argparse
 
+#Data format of csv
+#[ip,port,mapname,playercount,time,region,scanindex]
+
 #Arguments
 parser = argparse.ArgumentParser(description="SourceMapStats writer. Defaults in parameter.py",formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("-g", "--game", type=str, help="Master server to use",default=p.Game)
@@ -67,20 +70,20 @@ def IpReader(IP):#returns datastack
         x += 1
 
         server = a2s.info(IP,timeout=config["servertimeout"])
-        datastack = [IP[0],IP[1],server.map_name,server.player_count]
+        rawdatastack = [IP[0],IP[1],server.map_name,server.player_count]
 
-        if PrefixEnsure(datastack[2]):
-            averagelist.append(datastack[3])
-            datastack.append(datetime.datetime.now().strftime(WriterTimeFormat))
-            internalips.append(f'!!!!{datastack} has been added')
+        if PrefixEnsure(rawdatastack[2]):
+            averagelist.append(rawdatastack[3])
+            rawdatastack.append(datetime.datetime.now().strftime(WriterTimeFormat))#adds Time to datastack
+            internalips.append(f'!!!!{rawdatastack} has been added')
             w += 1
             try:
                 response = requests.get(f"http://ip-api.com/json/{IP[0]}").json()
                 region = response["countryCode"]
             except:
                 region = "00"
-            datastack.append(region)
-            return datastack
+            rawdatastack.append(region)
+            return rawdatastack
 
     except (AttributeError,a2s.BrokenMessageError):
         y += 1
@@ -98,10 +101,10 @@ def IpReader(IP):#returns datastack
     print(f"Acceptable servers : {w}")
     print(f"Server errors : {y}")
     print(f"Timeouts : {z}")
-    print(f"scan index : {MaxStep}")
+    print(f"scan index : {CurrentScanIndex}")
     print("**************")
     try:
-        print(datastack)
+        print(rawdatastack)
     except:
         print("NONE")
     
@@ -119,15 +122,15 @@ def SlowScan():
             print("Master server request timed out!")
 
 
-def ScanMaxStep():
-    global MaxStep
-    MaxStep = 0
+def GetMaxScanIndex():
+    global CurrentScanIndex
+    CurrentScanIndex = 0
     try:
         with open(rawfilename,"r") as filedata:
             csvreader = csv.reader(filedata)
             for row in csvreader:
-                if(len(row) == 7 and MaxStep<int(row[6])):
-                    MaxStep = int(row[6])
+                if(len(row) == 7 and CurrentScanIndex<int(row[6])):
+                    CurrentScanIndex = int(row[6])
     except:
         with open(rawfilename,"w",newline="") as filedata:
             print("NO FILE, MAKING NEW")
@@ -135,7 +138,7 @@ def ScanMaxStep():
 
 #Writes the incoming datastack to a csv line.
 def CSVWriter(list):
-    global MaxStep
+    global CurrentScanIndex
     try:
         with open(rawfilename,"r") as filedata:
             print("read successful")
@@ -144,9 +147,9 @@ def CSVWriter(list):
             print("NO FILE, MAKING NEW")
 
     with open(rawfilename,"a",newline="") as filedata:
-        MaxStep += 1
+        CurrentScanIndex += 1
         for ip in list:
-            csv.writer(filedata).writerow(ip+[MaxStep])#Index used for calculating averages for playercount
+            csv.writer(filedata).writerow(ip+[CurrentScanIndex])#Adds scanindex to datastack
 
 # First part of FastScan. Searches for IP's in the CSV.
 def FastScan():
@@ -186,12 +189,12 @@ def Iterator(delay=5,FastScansTillSlow=15):
     InternalPoint = FastScansTillSlow
     while time() < end or config['runforever']:
         if InternalPoint >= FastScansTillSlow:
-            ScanMaxStep()
+            GetMaxScanIndex()
             internalmode = f"SLOW SEARCH : I scan the MASTERSERVER every {FastScansTillSlow*delay} minutes"
             CSVWriter(IpReaderMulti(SlowScan()))
             InternalPoint = 0
         else:
-            ScanMaxStep()
+            GetMaxScanIndex()
             internalmode = f"FAST SEARCH : I scan the CSV for servers instead"
             CSVWriter(IpReaderMulti(FastScan()))
             InternalPoint += 1
