@@ -19,8 +19,8 @@ parser.add_argument("-mts", "--mapstoshow", type=int, help="How many maps to sho
 parser.add_argument("-sd", "--startdate", type=str, help="Specify start date of data",default=p.Start_Date)
 parser.add_argument("-ed", "--enddate", type=str, help="Specify end date of data",default=p.End_Date)
 parser.add_argument("-only", "--onlymaps", type=list, help="word whitelist",default=p.OnlyMapsContaining)
-parser.add_argument("-fl", "--filter", type=list, help="Words to remove from maps",default=p.wordfilter)
-parser.add_argument("-vf", "--versionfilter", type=list, help="Versions to remove",default=p.versionfilter)
+parser.add_argument("-fl", "--filter", type=list, help="Words to remove from maps",default=p.WordFilter)
+parser.add_argument("-vf", "--versionfilter", type=list, help="Versions to remove",default=p.VersionFilter)
 parser.add_argument("-pc", "--percision", type=int, help="Decimal place for figure",default=p.Percision)
 parser.add_argument("-lb", "--labeltransparency", type=int, help="Opacity of name label",default=p.LabelTransparency)
 parser.add_argument("-od", "--outputdimensions", type=tuple, help="Output dimensions of png",default=p.OutputDimensions)
@@ -177,13 +177,13 @@ def DuplicateMerger(data):
                 datatemp2[firsttime].update({row[2]:int(row[3])})#adds a new dict with the player count
     return datatemp2
 def SuffixFilter(_RawMapName):
-    RegexCutter = r"(dr_[a-zA-Z0-9]*)(?:_([a-zA-Z0-9]*))?"
-    FilterPattern = r'(?:['+p.versionfilter+r']\d)|(?:\d['+p.versionfilter+r'])|(?:'+p.wordfilter+r')'
+    RegexCutter = r"(vsh_dr|[a-zA-Z0-9]*?)(?:_([a-zA-Z0-9]*))(?:_([a-zA-Z0-9]*))?"
+    FilterPattern = r'(?:['+p.VersionFilter+r']\d)|(?:\d['+p.VersionFilter+r'])|(?:'+p.WordFilter+r')'
     m = re.match(RegexCutter, _RawMapName)
-    if(m[2] == None or re.search(FilterPattern,m[2].lower())):
-        return m[1]
-    else:
+    if(m.group(3) == None or re.search(FilterPattern,m.group(3).lower())):
         return m[1]+"_"+m[2]
+    else:
+        return m[0]
 #Does the heavy lifting and makes sure that data is correct
 def plotter():
     print("START")

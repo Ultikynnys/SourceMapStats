@@ -11,8 +11,8 @@ Start_Date = "2001-10-02" #date range to use
 End_Date = "2040-10-02"  #date range to use
 
 #Filters for fixing the map names
-versionfilter = "abcvdf" # looks for version names with the following letters. Ex. "a" would look for a0-9 or 0-9a
-wordfilter = "final|redux|rc|test|fix|skial|censored|blw|vrs|alpha|beta|fin" #Suffixes to remove Ex. Final
+VersionFilter = "abcvdf" # looks for version names with the following letters. Ex. "a" would look for a0-9 or 0-9a
+WordFilter = "final|redux|rc|test|fix|skial|censored|blw|vrs|alpha|beta|fin" #Suffixes to remove Ex. Final
 OnlyMapsContaining = [""] #Empty for all maps. Only show maps containing string value Ex. ["Bazinga","Playstation"]
 
 #Advanced Parameters
