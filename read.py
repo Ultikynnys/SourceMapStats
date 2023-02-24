@@ -28,6 +28,7 @@ parser.add_argument("-oth", "--othermapcolor", type=tuple, help="Other maps colo
 parser.add_argument("-avg", "--averagedays", type=int, help="How many days each bar represents",default=p.AverageDays)
 parser.add_argument("-ci", "--colorintensity", type=int, help="how much color changes per map",default=p.ColorIntensity)
 parser.add_argument("-ad", "--axisdates", type=int, help="How many dates to display on the x axis",default=p.XaxisDates)
+parser.add_argument("-nf", "--nofilter", type=bool, help="Disables filtering completely",default=p.NoFilter)
 args = parser.parse_args()
 config = vars(args)
 #The reader assumes that the CSV input dates are in this format.
@@ -160,9 +161,8 @@ def timechunker(AverageDays):
 def SuffixRemover(data):
     for timelist in data:
         for row in timelist:
-            if(SuffixFilter(row[2]) == "dr"):
-                print("NULLMAP")
-            row[2] = SuffixFilter(row[2])
+            if(not config['nofilter']):
+                row[2] = SuffixFilter(row[2])
     return data
 #Merges maps that are to be considered the same map.
 def DuplicateMerger(data):
@@ -201,9 +201,10 @@ def plotter():
     global CSVDATA
     global otherhandle
     global otherlabel
+
+    print("STEP 1")
     CSVDATA = RawData()
     fig,ax = plt.subplots(figsize=config['outputdimensions'])
-
     percentageSanity = 0
     Labels = []
     Handles = []
@@ -211,8 +212,6 @@ def plotter():
     previouscolor = 0
     previousmap = None
 
-
-    print("STEP 1")
     print("STEP 2")
     predata = timechunker(config['averagedays'])
     print("STEP 3")
