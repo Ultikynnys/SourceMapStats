@@ -148,8 +148,11 @@ def CSVWriter(list):
 
     with open(rawfilename,"a",newline="") as filedata:
         CurrentScanIndex += 1
-        for ip in list:
-            csv.writer(filedata).writerow(ip+[CurrentScanIndex])#Adds scanindex to datastack
+        try:
+            for ip in list:
+                csv.writer(filedata).writerow(ip+[CurrentScanIndex])#Adds scanindex to datastack
+        except:
+            print("no servers in list")
 
 # First part of FastScan. Searches for IP's in the CSV.
 def FastScan():
