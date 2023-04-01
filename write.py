@@ -70,7 +70,7 @@ def IpReader(IP):#returns datastack
         x += 1
 
         server = a2s.info(IP,timeout=config["servertimeout"])
-        rawdatastack = [IP[0],IP[1],server.map_name,server.player_count]
+        rawdatastack = [IP[0],IP[1],server.map_name,server.player_count-server.bot_count]
 
         if PrefixEnsure(rawdatastack[2]):
             averagelist.append(rawdatastack[3])
@@ -155,15 +155,18 @@ def CSVWriter(list):
             print("no servers in list")
 
 # First part of FastScan. Searches for IP's in the CSV.
-def FastScan():
-    iplist = []
+def FastScan(TestIp = [('176.57.188.166',27015)],Testmode = False):
     global internalips
-    with open(rawfilename,"r") as filedata:
-        csvreader = csv.reader(filedata)
-        for ip in csvreader:
-            if(config['gamemode'] in ip[2] or config['gamemode'].lower() == "all"):
-                if (ip[0],int(ip[1])) not in iplist:
-                    iplist.append((ip[0],(int(ip[1]))))
+    iplist = []
+    if(Testmode):
+        iplist = TestIp
+    else:
+        with open(rawfilename,"r") as filedata:
+            csvreader = csv.reader(filedata)
+            for ip in csvreader:
+                if(config['gamemode'] in ip[2] or config['gamemode'].lower() == "all"):
+                    if (ip[0],int(ip[1])) not in iplist:
+                        iplist.append((ip[0],(int(ip[1]))))
     return iplist
 # Second part of fast scan. searches servers using incoming list.
 def IpReaderMulti(list_ips=[]):
@@ -210,4 +213,6 @@ def Iterator(delay=5,FastScansTillSlow=15):
 #init
 if __name__ == "__main__":
     rawfilename = os.path.join(dirname,config['filename'])
-    Iterator()
+    #Iterator()
+    GetMaxScanIndex()
+    CSVWriter(IpReaderMulti(FastScan(Testmode = True)))
