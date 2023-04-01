@@ -213,6 +213,7 @@ def Iterator(delay=5,FastScansTillSlow=15):
 #init
 if __name__ == "__main__":
     rawfilename = os.path.join(dirname,config['filename'])
-    #Iterator()
-    GetMaxScanIndex()
-    CSVWriter(IpReaderMulti(FastScan(Testmode = True)))
+    Iterator()
+    #single ip testing
+    #GetMaxScanIndex()
+    #CSVWriter(IpReaderMulti(FastScan(TestIp = [('176.57.188.166',27015)],Testmode = True)))
