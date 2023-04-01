@@ -16,7 +16,7 @@ import argparse
 #Arguments
 parser = argparse.ArgumentParser(description="SourceMapStats writer. Defaults in parameter.py",formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("-g", "--game", type=str, help="Master server to use",default=p.Game)
-parser.add_argument("-gm", "--gamemode", type=str, help="Gamemode dr_,pl_,ctf_",default=p.Gamemode)
+parser.add_argument("-gm", "--gamemode", type=str, help="Gamemode dr_,pl_,ctf_",default=p.GameModeWrite)
 parser.add_argument("-f", "--filename", type=str, help="filename including suffix.",default=p.Filename)
 parser.add_argument("-r", "--region", type=str, help="filename including suffix.",default=p.regionserver)
 parser.add_argument("-st", "--servertimeout", type=str, help="filename including suffix.",default=p.timeout_query)
@@ -56,7 +56,7 @@ import valve.source.messages
 #Ensures that the gamemode is correct
 def PrefixEnsure(string):
     prefix = re.split("_",string)[0].lower()+"_" 
-    if(prefix == config["gamemode"].lower()):
+    if(prefix == config["gamemode"].lower() or config["gamemode"].lower() == "all"):
         return True
     else:
         return False
@@ -108,7 +108,7 @@ def IpReader(IP):#returns datastack
     except:
         print("NONE")
     
-    for inp in internalips:
+    for inp in internalips[-p.IpcountList:]:
         print(inp)
 
 def SlowScan():
@@ -161,8 +161,9 @@ def FastScan():
     with open(rawfilename,"r") as filedata:
         csvreader = csv.reader(filedata)
         for ip in csvreader:
-            if (ip[0],int(ip[1])) not in iplist:
-                iplist.append((ip[0],(int(ip[1]))))
+            if(config['gamemode'] in ip[2] or config['gamemode'].lower() == "all"):
+                if (ip[0],int(ip[1])) not in iplist:
+                    iplist.append((ip[0],(int(ip[1]))))
     return iplist
 # Second part of fast scan. searches servers using incoming list.
 def IpReaderMulti(list_ips=[]):

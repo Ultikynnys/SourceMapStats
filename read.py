@@ -16,6 +16,7 @@ parser.add_argument("-f", "--filename", type=str, help="Filename for reading",de
 parser.add_argument("-log", "--filelog", type=str, help="Filename for writing text stats",default=p.Filelog)
 parser.add_argument("-fp", "--filenamepng", type=str, help="Output png of bar graphs",default=p.Filenamepng)
 parser.add_argument("-mts", "--mapstoshow", type=int, help="How many maps to show",default=p.MapsToShow)
+parser.add_argument("-gm", "--gamemode", type=str, help="Gamemode dr_,pl_,ctf_,all",default=p.GameModeRead)
 parser.add_argument("-sd", "--startdate", type=str, help="Specify start date of data",default=p.Start_Date)
 parser.add_argument("-ed", "--enddate", type=str, help="Specify end date of data",default=p.End_Date)
 parser.add_argument("-only", "--onlymaps", type=list, help="word whitelist",default=p.OnlyMapsContaining)
@@ -68,7 +69,9 @@ def RawData():
         for row in csvreader:
             if(row[0] in p.IpBlackList):
                 continue
-            iplist.append(row)
+            if(config["gamemode"] in row[2] or config["gamemode"].lower() == "all"): #Gamemode filter
+                iplist.append(row)
+            
     return iplist
 
 def ColorGen():
@@ -181,7 +184,9 @@ def DuplicateMerger(data):
 def SuffixFilter(_RawMapName):
     RegexCutter = r"(vsh_dr|[a-zA-Z0-9]*?)(?:_([a-zA-Z0-9]*))(?:_([a-zA-Z0-9]*))?"
     FilterPattern = r'(?:['+p.VersionFilter+r']\d)|(?:\d['+p.VersionFilter+r'])|(?:'+p.WordFilter+r')'
-    m = re.match(RegexCutter, _RawMapName)
+    m = re.match(RegexCutter, _RawMapName)   
+    if(m == None):
+        return "unspecified"+"_"+_RawMapName
     if(m.group(3) == None or re.search(FilterPattern,m.group(3).lower())):
         return m[1]+"_"+m[2]
     else:
@@ -267,7 +272,7 @@ def plotter():
         othermapscreated = True
         _Y = np.ones((len(previousmap)), dtype=int)-previousmap
         plotdraw(X,"Other Maps")
-        ax.set_title(f"Top {len(TopMaps)} Maps with keywords {config['onlymaps']} out of {mapcount} \nBar width as relative Player count")
+        ax.set_title(f"Top {len(TopMaps)} Maps with keywords {config['onlymaps']} out of {mapcount} \nBar width as relative Player count\n Gamemode : {config['gamemode']}")
 
         ax.grid(True)
 
@@ -275,7 +280,7 @@ def plotter():
         ax.set_title(f"None maps found using keywords {config['onlymaps']}")
 
     else:
-        ax.set_title(f"Top {len(TopMaps)} Maps with keywords {config['onlymaps']} out of {mapcount} \nBar width as relative Player count")
+        ax.set_title(f"Top {len(TopMaps)} Maps with keywords {config['onlymaps']} out of {mapcount} \nBar width as relative Player count\n Gamemode : {config['gamemode']}")
 
 
     print("STEP 8")
