@@ -6,6 +6,7 @@ import requests
 import socket
 import csv
 import re
+import copy
 from time import time,sleep
 import Parameters as p
 import argparse
@@ -20,9 +21,10 @@ parser.add_argument("-gm", "--gamemode", type=str, help="Gamemode dr_,pl_,ctf_",
 parser.add_argument("-f", "--filename", type=str, help="filename including suffix.",default=p.Filename)
 parser.add_argument("-r", "--region", type=str, help="filename including suffix.",default=p.regionserver)
 parser.add_argument("-st", "--servertimeout", type=str, help="filename including suffix.",default=p.timeout_query)
-parser.add_argument("-mst", "--masterservertimeout", type=str, help="filename including suffix.",default=p.timeout_master)
+parser.add_argument("-mst", "--masterservertimeout", type=int, help="filename including suffix.",default=p.timeout_master)
 parser.add_argument("-rf", "--runforever", type=bool, help="Run the writer forever.",default=p.RunForever)
 parser.add_argument("-tm", "--timer", type=str, help="For how many minutes to run if runforever is False.",default=p.RuntimeMinutes)
+parser.add_argument("-fd", "--fastdelay", type=str, help="Delay between fast scans",default=p.FastWriteDelay)
 args = parser.parse_args()
 config = vars(args)
 
@@ -70,12 +72,23 @@ def IpReader(IP):#returns datastack
         x += 1
 
         server = a2s.info(IP,timeout=config["servertimeout"])
+        if(server.player_count-server.bot_count < 1): # Ignores bot only servers
+            y += 1
+            return None
         rawdatastack = [IP[0],IP[1],server.map_name,server.player_count-server.bot_count]
 
         if PrefixEnsure(rawdatastack[2]):
-            averagelist.append(rawdatastack[3])
+            try:
+                averagelist.append(rawdatastack[3])
+            except NameError:
+                averagelist = []
+                averagelist.append(rawdatastack[3])
             rawdatastack.append(datetime.datetime.now().strftime(WriterTimeFormat))#adds Time to datastack
-            internalips.append(f'!!!!{rawdatastack} has been added')
+            try:
+                internalips.append(f'!!!!{rawdatastack} has been added')
+            except NameError:
+                internalips = []
+                internalips.append(f'!!!!{rawdatastack} has been added')
             w += 1
             try:
                 response = requests.get(f"http://ip-api.com/json/{IP[0]}").json()
@@ -112,12 +125,12 @@ def IpReader(IP):#returns datastack
         print(inp)
 
 def SlowScan():
-    global internalips
     global x,y,z,w
     ips = []
     with valve.source.master_server.MasterServerQuerier(timeout=config["masterservertimeout"]) as msq:
         try:
-            return [address for address in msq.find(gamedir=config["game"],empty=True,secure=True,region=config['region'])]
+            serverlist = [address for address in msq.find(gamedir=config["game"],empty=True,secure=True,region=config['region'])]
+            return serverlist
         except:
             print("Master server request timed out!")
 
@@ -148,11 +161,15 @@ def CSVWriter(list):
 
     with open(rawfilename,"a",newline="") as filedata:
         CurrentScanIndex += 1
-        try:
-            for ip in list:
+        for ip in list:
+            try:
                 csv.writer(filedata).writerow(ip+[CurrentScanIndex])#Adds scanindex to datastack
-        except:
-            print("no servers in list")
+            except:
+                try:
+                    ip[2] = re.sub('[^a-zA-Z0-9_]+','', ip[2])
+                    csv.writer(filedata).writerow(ip+[CurrentScanIndex])#Adds scanindex to datastack
+                except:
+                    print("Invalid map")
 
 # First part of FastScan. Searches for IP's in the CSV.
 def FastScan(TestIp = [('176.57.188.166',27015)],Testmode = False):
@@ -169,25 +186,21 @@ def FastScan(TestIp = [('176.57.188.166',27015)],Testmode = False):
                         iplist.append((ip[0],(int(ip[1]))))
     return iplist
 # Second part of fast scan. searches servers using incoming list.
-def IpReaderMulti(list_ips=[]):
+def IpReaderMulti(list_ips):
     global w,y,z,x
-    global internalips
-    global averagelist
-    averagelist = []
     w,y,z,x = 0,0,0,0
-    internalips = []
-    ips = []
+    ips2 = []
     try:
         for address in list_ips:
             datastack = IpReader(address)
             if(datastack != None):
-                ips.append(datastack)
-        return ips
+                ips2.append(datastack)
     except:
         print("Master server request timed out!")
+    return ips2
 
 #Do not touch the iterator parameters if you already have csv data. It will affect the data in unpredictable ways.
-def Iterator(delay=5,FastScansTillSlow=15):
+def Iterator(delay=config["fastdelay"],FastScansTillSlow=15):
     global internalmode
     global WriterTimeFormat
     internalmode = ""
@@ -197,7 +210,7 @@ def Iterator(delay=5,FastScansTillSlow=15):
     while time() < end or config['runforever']:
         if InternalPoint >= FastScansTillSlow:
             GetMaxScanIndex()
-            internalmode = f"SLOW SEARCH : I scan the MASTERSERVER every {FastScansTillSlow*delay} minutes"
+            internalmode = f"SLOW SEARCH : I scan the MASTERSERVER every {FastScansTillSlow*config['fastdelay']} minutes"
             CSVWriter(IpReaderMulti(SlowScan()))
             InternalPoint = 0
         else:

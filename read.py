@@ -69,7 +69,7 @@ def RawData():
         for row in csvreader:
             if(row[0] in p.IpBlackList):
                 continue
-            if(config["gamemode"] in row[2] or config["gamemode"].lower() == "all"): #Gamemode filter
+            if(config["gamemode"].lower() in row[2].lower() or config["gamemode"].lower() == "all"): #Gamemode filter
                 iplist.append(row)
             
     return iplist
