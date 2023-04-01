@@ -66,6 +66,8 @@ def RawData():
     with open(rawfilename,"r") as filedata:
         csvreader = csv.reader(filedata)
         for row in csvreader:
+            if(row[0] in p.IpBlackList):
+                continue
             iplist.append(row)
     return iplist
 

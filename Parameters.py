@@ -16,6 +16,10 @@ VersionFilter = "abcvdf" # looks for version names with the following letters. E
 WordFilter = "final|redux|rc|test|fix|skial|censored|blw|vrs|alpha|beta|fin" # USE None for no filtering Suffixes to remove Ex. Final
 OnlyMapsContaining = [""] #Empty for all maps. Only show maps containing string value Ex. ["Bazinga","Playstation"]
 
+
+#Data Ignore
+IpBlackList = ['94.226.97.69'] #servers that are using fake clients
+
 #Advanced Parameters
 OutputDimensions = (12,6)
 LabelTransparency = 0.5
