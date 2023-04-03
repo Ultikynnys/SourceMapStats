@@ -68,7 +68,8 @@ def GlobalFlush():#sets global values to defaults
     global x,y,z,w
     global internalips
     global averagelist
-    averagelist = internalips = []
+    internalips = []
+    averagelist = []
     x,y,z,w = (0,0,0,0)
 def IpReader(IP):#returns datastack
     global x,y,z,w
@@ -120,7 +121,7 @@ def IpReader(IP):#returns datastack
     print("**************")
     try:
         print(rawdatastack)
-    except:
+    except UnboundLocalError:
         print("NONE")
     
     for inp in internalips[-p.IpcountList:]:
@@ -129,15 +130,18 @@ def IpReader(IP):#returns datastack
 def SlowScan():
     global x,y,z,w
     ips = []
+    servercount = 0
     try:
         with valve.source.master_server.MasterServerQuerier(timeout=config["masterservertimeout"]) as msq:
             addresses = msq.find(gamedir=config["game"],empty=True,secure=True,region=config['region'])
-            print(f"Servers found in MasterServer : {len(addresses)}")
+            
             for address in addresses:
                 ips.append(address)
-            return ips
+                servercount += 1
+        print(f"Servers found in MasterServer : {servercount}")
     except:
-        print("Master server request timed out!")
+        print("Master Server Timed out!!")
+    return ips
 
 
 def GetMaxScanIndex():
