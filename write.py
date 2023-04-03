@@ -64,6 +64,12 @@ def PrefixEnsure(string):
         return False
 #Scan all possible servers in the game for map matches.
 
+def GlobalFlush():#sets global values to defaults
+    global x,y,z,w
+    global internalips
+    global averagelist
+    averagelist = internalips = []
+    x,y,z,w = (0,0,0,0)
 def IpReader(IP):#returns datastack
     global x,y,z,w
     global internalips
@@ -78,11 +84,7 @@ def IpReader(IP):#returns datastack
         rawdatastack = [IP[0],IP[1],server.map_name,server.player_count-server.bot_count]
 
         if PrefixEnsure(rawdatastack[2]):
-            try:
-                averagelist.append(rawdatastack[3])
-            except NameError:
-                averagelist = []
-                averagelist.append(rawdatastack[3])
+            averagelist.append(rawdatastack[3])
             rawdatastack.append(datetime.datetime.now().strftime(WriterTimeFormat))#adds Time to datastack
             try:
                 internalips.append(f'!!!!{rawdatastack} has been added')
@@ -173,7 +175,6 @@ def CSVWriter(list):
 
 # First part of FastScan. Searches for IP's in the CSV.
 def FastScan(TestIp = [('176.57.188.166',27015)],Testmode = False):
-    global internalips
     iplist = []
     if(Testmode):
         iplist = TestIp
@@ -187,9 +188,8 @@ def FastScan(TestIp = [('176.57.188.166',27015)],Testmode = False):
     return iplist
 # Second part of fast scan. searches servers using incoming list.
 def IpReaderMulti(list_ips):
-    global w,y,z,x
-    w,y,z,x = 0,0,0,0
     ips2 = []
+    GlobalFlush()
     try:
         for address in list_ips:
             datastack = IpReader(address)
