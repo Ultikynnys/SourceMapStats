@@ -129,12 +129,15 @@ def IpReader(IP):#returns datastack
 def SlowScan():
     global x,y,z,w
     ips = []
-    with valve.source.master_server.MasterServerQuerier(timeout=config["masterservertimeout"]) as msq:
-        try:
-            serverlist = [address for address in msq.find(gamedir=config["game"],empty=True,secure=True,region=config['region'])]
-            return serverlist
-        except:
-            print("Master server request timed out!")
+    try:
+        with valve.source.master_server.MasterServerQuerier(timeout=config["masterservertimeout"]) as msq:
+            addresses = msq.find(gamedir=config["game"],empty=True,secure=True,region=config['region'])
+            print(f"Servers found in MasterServer : {len(addresses)}")
+            for address in addresses:
+                ips.append(address)
+            return ips
+    except:
+        print("Master server request timed out!")
 
 
 def GetMaxScanIndex():
