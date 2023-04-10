@@ -77,12 +77,12 @@ def RawData():
 def ColorGen():
     global previouscolor
     global force
-    previouscolor += 2*pi/(mapcount)
+    previouscolor += config['colorintensity']*2*pi/config['mapstoshow']
 
 
-    amplitude   = np.sin(previouscolor*config['colorintensity'])
-    amplitude2   = np.sin((previouscolor+2*pi/3)*config['colorintensity'])
-    amplitude3   = np.sin((previouscolor+4*pi/3)*config['colorintensity'])
+    amplitude   = np.sin(previouscolor)
+    amplitude2   = np.sin(previouscolor+2*pi/3)
+    amplitude3   = np.sin(previouscolor+4*pi/3)
     if( not force):
         col = ((amplitude+1)/2, (amplitude2+1)/2, (amplitude3+1)/2)
     elif(config['othermapcolor'] == None):
@@ -182,6 +182,8 @@ def DuplicateMerger(data):
                 datatemp2[firsttime].update({row[2]:int(row[3])})#adds a new dict with the player count
     return datatemp2
 def SuffixFilter(_RawMapName):
+    if(config['nofilter']):
+        return _RawMapName
     RegexCutter = r"(vsh_dr|[a-zA-Z0-9]*?)(?:_([a-zA-Z0-9]*))(?:_([a-zA-Z0-9]*))?"
     FilterPattern = r'(?:['+p.VersionFilter+r']\d)|(?:\d['+p.VersionFilter+r'])|(?:'+p.WordFilter+r')'
     m = re.match(RegexCutter, _RawMapName)   

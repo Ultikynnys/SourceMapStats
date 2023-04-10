@@ -3,8 +3,8 @@ Game = "tf"  # cstrike, tf, hl2, hl2mp, csgo
 Filename = "output.csv"  # file to read and write
 Filelog = "stats.log"  # file to read and write
 Filenamepng = "output.png"  # name of the figure
-MapsToShow = 15  # How many maps to show in order of popularity
-ColorIntensity = 10   # Changes the rate at which the colors change Low being very small changes and High being very big changes.
+MapsToShow = 1000  # How many maps to show in order of popularity
+ColorIntensity = 3   # Changes the rate at which the colors change Low being very small changes and High being very big changes.
 
 # Reader date range to read
 Start_Date = "2001-10-02"  # date range to use
@@ -14,7 +14,7 @@ End_Date = "2040-10-02"   # date range to use
 NoFilter = False  # Disables filtering
 VersionFilter = "abcvdf"  # looks for version names with the following letters. Ex. "a" would look for a0-9 or 0-9a
 WordFilter = "final|redux|rc|test|fix|skial|censored|blw|vrs|alpha|beta|fin"  # USE None for no filtering Suffixes to remove Ex. Final
-GameModeRead = "mvm_"  # Gamemodes to read to the output csv. EX. "all" for all Gamemodes. "dr_" for deathrun
+GameModeRead = ""  # Gamemodes to read to the output csv. EX. "all" for all Gamemodes. "dr_" for deathrun. "unspecified" for maps without a prefix
 OnlyMapsContaining = [""]  # Empty for all maps. Only show maps containing string value Ex. ["Bazinga","Playstation"]
 
 # Data Ignore
