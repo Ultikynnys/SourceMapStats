@@ -3,7 +3,7 @@ Game = "tf"  # cstrike, tf, hl2, hl2mp, csgo
 Filename = "output.csv"  # file to read and write
 Filelog = "stats.log"  # file to read and write
 Filenamepng = "output.png"  # name of the figure
-MapsToShow = 1000  # How many maps to show in order of popularity
+MapsToShow = 15  # How many maps to show in order of popularity
 ColorIntensity = 3   # Changes the rate at which the colors change Low being very small changes and High being very big changes.
 
 # Reader date range to read
@@ -14,8 +14,8 @@ End_Date = "2040-10-02"   # date range to use
 NoFilter = False  # Disables filtering
 VersionFilter = "abcvdf"  # looks for version names with the following letters. Ex. "a" would look for a0-9 or 0-9a
 WordFilter = "final|redux|rc|test|fix|skial|censored|blw|vrs|alpha|beta|fin"  # USE None for no filtering Suffixes to remove Ex. Final
-GameModeRead = ""  # Gamemodes to read to the output csv. EX. "all" for all Gamemodes. "dr_" for deathrun. "unspecified" for maps without a prefix
-OnlyMapsContaining = [""]  # Empty for all maps. Only show maps containing string value Ex. ["Bazinga","Playstation"]
+GameModeRead = "ctf_"  # Gamemodes to read to the output csv. EX. "all" for all Gamemodes. "dr_" for deathrun. 
+OnlyMapsContaining = [""]  # Empty for all maps. Only show maps containing string value Ex. ["Bazinga","Playstation"] ["unspecified"] for maps without a prefix
 
 # Data Ignore
 IpBlackList = ['94.226.97.69']  # servers that are using fake clients
