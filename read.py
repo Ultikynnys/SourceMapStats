@@ -129,21 +129,28 @@ def plotdraw(_X,_label):
     dateformat = "%Y/%m/%d"
     xtimes = [datetime.strptime(y,ReaderTimeFormat).strftime(dateformat) for y in _X]
     ax.set_xticks(np.linspace(ax.get_xlim()[0],ax.get_xlim()[1],len(xtimes)),xtimes)
-#"Chunks" dates together and averages them into bars.
-def timechunker(AverageDays):
+
+#Cuts the time to match the end and start dates
+def timerange(prerawstat = RawData()):
+    rawstat = []
     startdateobject = datetime.strptime(config["startdate"], '%Y-%m-%d')
     enddateobject = datetime.strptime(config["enddate"], '%Y-%m-%d')
-    chunkedarray = []
-    chunkedarray_index = 0
-    chunktime = timedelta(AverageDays,0,0,0,0,0,0)#Interval means days here
-    initialtime = None
-    rawstat = []
-    for row in CSVDATA:
+    for row in prerawstat:
         datetime_object = datetime.strptime(row[4], ReaderTimeFormat)
         if(datetime_object > startdateobject and datetime_object < enddateobject):
             rawstat.append(row)
-        
-    for row in rawstat:
+    return rawstat
+
+
+#"Chunks" dates together and averages them into bars.
+def timechunker(AverageDays):
+
+    chunkedarray = []
+    chunkedarray_index = 0
+    chunktime = timedelta(AverageDays,0,0,0,0,0,0)#Interval means days here
+    initialtime = None   
+
+    for row in timerange():
 
         if(initialtime == None):
             initialtime = datetime.strptime(row[4], ReaderTimeFormat) #get the first row time
