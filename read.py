@@ -35,10 +35,10 @@ config = vars(args)
 #The reader assumes that the CSV input dates are in this format.
 ReaderTimeFormat = '%Y-%m-%d-%H:%M:%S'
 def IndexAverage(Rawdata):
-    CurrentScanIndex = 0
+    CurrentScanIndex =  0
     CurrentScanIndexlist = []
     ScanAverage = []
-    for scan in Rawdata:
+    for scan in timerange(Rawdata):
         try:
             curint = int(scan[6])
             if(CurrentScanIndex == curint):
