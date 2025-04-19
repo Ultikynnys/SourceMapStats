@@ -82,8 +82,8 @@ def require_api_key(f):
 ################################################
 
 REQUESTS_PER_IP = {}  # { ip_string : [list_of_timestamps] }
-MAX_REQUESTS = 3
-WINDOW_SECONDS = 1
+MAX_REQUESTS = 30
+WINDOW_SECONDS = 15
 
 def rate_limiter(f):
     @wraps(f)
