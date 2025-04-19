@@ -205,13 +205,19 @@
         function setAllButtonsDisabled(disabled) {
             document.querySelectorAll("button").forEach(btn => btn.disabled = disabled);
         }
+
+        /* --------------  SANITISERS & RULES  -------------- */
+        function sanitizeApiKey(key)  { return key.replace(/[^a-zA-Z0-9-_]/g, ''); }
+        function hasValidApiKey(key)  { return key && key.length >= 10; }      /* STRICT for scanning */
+
+        /* --------------  FETCH WRAPPER  -------------- */
         async function doFetch(url, options = {}) {
             options.headers = options.headers || {};
-            const rawKey       = document.getElementById('apiKey')?.value || '';
-            const sanitizedKey = rawKey.replace(/[^a-zA-Z0-9-_]/g, '');
+            const rawKey = document.getElementById('apiKey')?.value || '';
+            const key    = sanitizeApiKey(rawKey);
 
-            /* send header only when length ≥ 10 */
-            if (sanitizedKey.length >= 10) options.headers['X-API-KEY'] = sanitizedKey;
+            /* attach only if ≥ 10 chars (chart requests *never* require it) */
+            if (hasValidApiKey(key)) options.headers['X-API-KEY'] = key;
 
             const response = await fetch(url, options);
 
@@ -239,12 +245,10 @@
             }
             return response.json();
         }
-        function sanitizeApiKey(key)  { return key.replace(/[^a-zA-Z0-9-_]/g, ''); }
-        function isApiKeyValid(key)   { return key && key.length >= 10; }  /* STRICT 10‑char min */
 
         /* --------------  SERVER‑SIDE KEY VALIDATION  -------------- */
         async function validateApiKey(key) {
-            if (!isApiKeyValid(key)) return false;
+            if (!hasValidApiKey(key)) return false;
             try {
                 const res = await fetch('/api/validate_key', {
                     cache  : 'no-store',
@@ -277,54 +281,8 @@
         /* ping immediately, then every 5 s */
         setInterval(updateConnectionStatus, 5_000);
 
-        /*  -----------------  STATUS  ----------------- */
+        /*  -----------------  STATUS / KEY HANDLING  ----------------- */
         let statusInterval = null;
-
-        async function checkApiKeyState() {
-            const apiKeyElem = document.getElementById('apiKey');
-
-            /* sanitize visible input */
-            const rawInput  = apiKeyElem.value;
-            const sanitised = sanitizeApiKey(rawInput);
-            if (rawInput !== sanitised) apiKeyElem.value = sanitised;
-
-            /* length gate first */
-            if (!isApiKeyValid(sanitised)) {
-                showInvalidState('Too short (min 10)');
-                return;
-            }
-
-            /* round‑trip validation */
-            const serverOK = await validateApiKey(sanitised);
-            if (!serverOK) {
-                showInvalidState('Invalid');
-                return;
-            }
-
-            /* === valid key === */
-            document.getElementById('apiKeyState').textContent = 'API Key State: Valid';
-
-            document.getElementById('refreshChart').style.display = 'inline-block';
-            document.getElementById('startScan').style.display    = 'inline-block';
-            document.getElementById('stopScan').style.display     = 'inline-block';
-
-            toggleExtraParams(true);
-
-            if (!statusInterval) {
-                statusInterval = setInterval(() => refreshStatus().catch(console.error), 1_000);
-            }
-        }
-
-        function showInvalidState(reason) {
-            document.getElementById('apiKeyState').textContent = `API Key State: ${reason}`;
-            document.getElementById('startScan').style.display = 'none';
-            document.getElementById('stopScan').style.display  = 'none';
-            toggleExtraParams(false);
-            if (statusInterval) {
-                clearInterval(statusInterval);
-                statusInterval = null;
-            }
-        }
 
         function toggleExtraParams(show) {
             const fastWrite   = document.getElementById('fastWriteGroup');
@@ -332,6 +290,49 @@
             if (fastWrite && runtimeMins) {
                 fastWrite.style.display   = show ? 'flex' : 'none';
                 runtimeMins.style.display = show ? 'flex' : 'none';
+            }
+        }
+
+        async function checkApiKeyState() {
+            const apiKeyElem = document.getElementById('apiKey');
+
+            /* sanitise visible input */
+            const rawInput = apiKeyElem.value;
+            const key      = sanitizeApiKey(rawInput);
+            if (rawInput !== key) apiKeyElem.value = key;
+
+            /* ---------  No ≥10‑char key entered → chart‑only mode  --------- */
+            if (!hasValidApiKey(key)) {
+                document.getElementById('apiKeyState').textContent =
+                    'API Key State: Not supplied — chart‑only mode';
+
+                document.getElementById('startScan').style.display = 'none';
+                document.getElementById('stopScan').style.display  = 'none';
+                toggleExtraParams(false);
+
+                if (statusInterval) { clearInterval(statusInterval); statusInterval = null; }
+                return;
+            }
+
+            /* ---------  Length OK, ask server  --------- */
+            const serverOK = await validateApiKey(key);
+            if (!serverOK) {
+                document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
+                document.getElementById('startScan').style.display = 'none';
+                document.getElementById('stopScan').style.display  = 'none';
+                toggleExtraParams(false);
+                if (statusInterval) { clearInterval(statusInterval); statusInterval = null; }
+                return;
+            }
+
+            /* ---------  Fully valid key  --------- */
+            document.getElementById('apiKeyState').textContent = 'API Key State: Valid';
+            document.getElementById('startScan').style.display = 'inline-block';
+            document.getElementById('stopScan').style.display  = 'inline-block';
+            toggleExtraParams(true);
+
+            if (!statusInterval) {
+                statusInterval = setInterval(() => refreshStatus().catch(console.error), 1_000);
             }
         }
 
@@ -404,7 +405,7 @@
         /*  -----------------  SCAN / STATUS BUTTONS  ----------------- */
         async function startScanning() {
             const key = sanitizeApiKey(document.getElementById('apiKey').value);
-            if (!isApiKeyValid(key)) { alert('API key must be at least 10 characters.'); return; }
+            if (!hasValidApiKey(key)) { alert('API key must be at least 10 characters.'); return; }
             try {
                 const res = await doFetch('/api/start_scan', { method:'POST' });
                 alert(res.status || res.error);
@@ -412,7 +413,7 @@
         }
         async function stopScanning() {
             const key = sanitizeApiKey(document.getElementById('apiKey').value);
-            if (!isApiKeyValid(key)) { alert('API key must be at least 10 characters.'); return; }
+            if (!hasValidApiKey(key)) { alert('API key must be at least 10 characters.'); return; }
             try {
                 const res = await doFetch('/api/stop_scan', { method:'POST' });
                 alert(res.status || res.error);
