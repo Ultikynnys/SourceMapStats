@@ -8,8 +8,8 @@ import time
 import threading
 from datetime import datetime, timedelta, timezone
 import numpy as np
-
-from flask import Flask, jsonify, request
+import threading
+from flask import Flask, jsonify, request, g
 import json
 import socket
 import requests
@@ -81,36 +81,138 @@ def require_api_key(f):
 # --------------[ IP Rate Limiting ]-----------#
 ################################################
 
-REQUESTS_PER_IP = {}  # { ip_string : [list_of_timestamps] }
-MAX_REQUESTS = 30
-WINDOW_SECONDS = 15
+REQUESTS_PER_IP = {}          # { ip : [timestamps] }
+MAX_REQUESTS    = 30        # 30 requests per 15 seconds
+WINDOW_SECONDS  = 15          # 15‑second sliding window
 
-def rate_limiter(f):
+# ---------------[ shared helper ]---------------- #
+def _ip_rate_info(ip: str, now: float):
+    """
+    Return (remaining, reset_in) for *ip* **after** adding the current call.
+
+    remaining  – requests still allowed **after** this one succeeded
+    reset_in   – seconds until *any* slot frees up (0‑15)
+    """
+    stamps = REQUESTS_PER_IP.setdefault(ip, [])
+
+    # 1. toss every entry that is already outside the 15‑s window
+    cutoff = now - WINDOW_SECONDS
+    while stamps and stamps[0] <= cutoff:          # NOTE:  <=  (was <)
+        stamps.pop(0)
+
+    # 2. register the request that just passed the limiter test
+    stamps.append(now)
+
+    # 3. calculate remaining + time to roll‑over
+    remaining = MAX_REQUESTS - len(stamps)
+    oldest     = stamps[0]            # cannot be empty – we just appended
+    reset_in   = max(0, WINDOW_SECONDS - (now - oldest))
+    return remaining, int(reset_in)
+
+
+
+# ─── per‑endpoint rate limiter for status & validate_key: 5 calls per second ───
+STATUS_REQUESTS = {}           # { ip: [timestamps] }
+STATUS_MAX     = 5
+STATUS_WINDOW  = 1.0           # seconds
+
+def status_rate_limiter(f):
     @wraps(f)
-    def wrapper(*args, **kwargs):
-        provided_key = request.headers.get('X-API-KEY', '')
-        if provided_key in ACCEPTED_KEYS:
-            # authenticated users skip IP rate limit
-            return f(*args, **kwargs)
+    def wrapped(*args, **kwargs):
+        ip    = request.remote_addr or "unknown"
+        now   = time.time()
+        stamps = STATUS_REQUESTS.setdefault(ip, [])
 
-        now = time.time()
-        remote_addr = request.remote_addr or 'unknown'
-        timestamps = REQUESTS_PER_IP.setdefault(remote_addr, [])
-        cutoff = now - WINDOW_SECONDS
-        while timestamps and timestamps[0] < cutoff:
-            timestamps.pop(0)
+        # 1) prune out‑of‑window
+        cutoff = now - STATUS_WINDOW
+        while stamps and stamps[0] <= cutoff:
+            stamps.pop(0)
 
-        if len(timestamps) >= MAX_REQUESTS:
-            next_reset = timestamps[0] + WINDOW_SECONDS
-            cooldown = max(0, next_reset - now)
-            return jsonify({
-                "error": "Too many requests, slow down.",
-                "cooldown": cooldown
-            }), 429
+        # 2) enforce quota
+        if len(stamps) >= STATUS_MAX:
+            return jsonify({"error": "Too many requests"}), 429
 
-        timestamps.append(now)
+        # 3) record this hit
+        stamps.append(now)
+
+        # 4) compute & expose remaining/reset exactly like your main limiter did
+        remaining = STATUS_MAX - len(stamps)
+        oldest    = stamps[0]
+        reset_in  = int(max(0, STATUS_WINDOW - (now - oldest)))
+
+        g.rate_remaining = remaining
+        g.rate_reset     = reset_in
+
         return f(*args, **kwargs)
-    return wrapper
+    return wrapped
+
+# ---------------[ new tight wrapper ]------------ #
+def rate_limiter(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        ip    = request.remote_addr or "unknown"
+        now   = time.time()
+        # 1. Prune old entries
+        cutoff = now - WINDOW_SECONDS
+        stamps = REQUESTS_PER_IP.setdefault(ip, [])
+        while stamps and stamps[0] <= cutoff:
+            stamps.pop(0)
+
+        # 2. If quota exhausted, return 429 immediately
+        if len(stamps) >= MAX_REQUESTS:
+            reset_in = int(WINDOW_SECONDS - (now - stamps[0]))
+            resp = jsonify({"error": "Too many requests", "cooldown": reset_in})
+            resp.status_code = 429
+            resp.headers.update({
+                "X-RateLimit-Limit":     str(MAX_REQUESTS),
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset":     str(reset_in)
+            })
+            return resp
+
+        # 3. Record this allowed request and compute fresh counters
+        stamps.append(now)
+        remaining, reset_in = (
+            MAX_REQUESTS - len(stamps),
+            int(WINDOW_SECONDS - (now - stamps[0]))
+        )
+
+        # 4. Expose counters to handlers (e.g. /api/status)
+        g.rate_remaining = remaining
+        g.rate_reset     = reset_in
+
+        # 5. Invoke the actual view and attach headers
+        resp = app.make_response(view(*args, **kwargs))
+        resp.headers.update({
+            "X-RateLimit-Limit":     str(MAX_REQUESTS),
+            "X-RateLimit-Remaining": str(remaining),
+            "X-RateLimit-Reset":     str(reset_in)
+        })
+        return resp
+
+    return wrapped
+
+
+
+
+def _rate_status_for_request():
+    """
+    Returns   requests_left   – int
+              ratelimit_reset – seconds until quota fully refreshes (0‑15)
+    """
+    now    = time.time()
+    remote = request.remote_addr or "unknown"
+    stamps = REQUESTS_PER_IP.get(remote, [])
+
+    # keep only fresh entries
+    recent   = [t for t in stamps if t >= now - WINDOW_SECONDS]
+    remaining = MAX_REQUESTS - len(recent)
+
+    # if there were any recent calls, show how long until the window resets
+    reset_in = WINDOW_SECONDS - (now - recent[0]) if recent else 0
+    return {"requests_left": remaining, "ratelimit_reset": round(reset_in)}
+
+
 
 ################################################
 # --------------[ Track Requests ]-------------#
@@ -163,6 +265,11 @@ config = {
     "IpcountList": 5,
     "FastWriteDelay": 10
 }
+
+# --------------------------------------------------------------------
+# Clamp for per‑IP scans: no single server lookup may exceed 1 second
+# --------------------------------------------------------------------
+MAX_SINGLE_IP_TIMEOUT = 1.0  # seconds
 
 if "servertimeout" not in config:
     config["servertimeout"] = config["timeout_query"]
@@ -400,38 +507,62 @@ def GlobalFlush():
     x = y = z = w = 0
 
 def IpReader(IP):
+    """
+    Query a single game server and (optionally) its Geo‑IP location.
+
+    The effective network timeout is clamped to MAX_SINGLE_IP_TIMEOUT
+    so the whole scan for one IP can never exceed one second.
+    """
     global x, y, z, w, internalips, averagelist, last_error_message, timeout_error_count
+
     try:
         x += 1
         server_address = (IP[0], int(IP[1]))
-        info = a2s.info(server_address, timeout=config["servertimeout"])
+
+        # --- apply the clamp -------------------------------------------------
+        effective_timeout = min(config.get("servertimeout", config["timeout_query"]),
+                                MAX_SINGLE_IP_TIMEOUT)
+        # --------------------------------------------------------------------
+
+        info = a2s.info(server_address, timeout=effective_timeout)
+
         current_players = info.player_count - info.bot_count
-        if current_players < 1:
+        if current_players < 1:          # empty or bots only → skip
             y += 1
             return None
+
         row = [IP[0], str(IP[1]), info.map_name, str(current_players)]
         averagelist.append(int(row[3]))
         row.append(datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
+
+        # Geo‑IP (optional, also clamped)
         region = "00"
         try:
             if is_ip_address(IP[0]):
-                response = requests.get(f"http://ip-api.com/json/{IP[0]}", timeout=2)
-                geo = response.json()
-                region = geo.get("countryCode", "00")
-        except:
+                resp = requests.get(f"http://ip-api.com/json/{IP[0]}",
+                                    timeout=effective_timeout)
+                region = resp.json().get("countryCode", "00")
+        except Exception:
             pass
+
         row.append(region)
+
         timeout_error_count = 0
         w += 1
         return row
+
     except (socket.timeout, Exception) as e:
         y += 1
-        last_error_message = f"Error in IpReader for {IP[0]}:{IP[1]} - {e}"
+        last_error_message = f"Error in IpReader for {IP[0]}:{IP[1]} – {e}"
         timeout_error_count += 1
+
+        # Gradually relax the configured timeout, but never above the clamp
         if timeout_error_count >= error_threshold:
-            config["servertimeout"] += 0.5
+            config["servertimeout"] = min(config["servertimeout"] + 0.5,
+                                          MAX_SINGLE_IP_TIMEOUT)
             timeout_error_count = 0
         return None
+
 
 def SlowScan():
     ips = []
@@ -562,20 +693,27 @@ scanning_stop_event = threading.Event()
 # ---------------[ Flask Routes ]--------------#
 ################################################
 
+
+
+
 @app.route('/api/validate_key', methods=['GET'])
 @require_api_key             # <- rejects unknown keys with 401
-@rate_limiter
+@status_rate_limiter
 def validate_key():          # Front‑end only needs the status code
     return jsonify({"valid": True})
 
 @app.route('/api/heartbeat')
-@rate_limiter
 def heartbeat():
     """
-    Simple ping endpoint for frontend heartbeat checks.
-    Returns HTTP 200 + JSON payload so client marks 'Connected'.
+    Ping + “free” rate‑limit status for this IP.
     """
-    return jsonify({"heartbeat": True})
+    # Use your helper that peeks at REQUESTS_PER_IP without stamping a new request
+    rate = _rate_status_for_request()
+    return jsonify({
+        "heartbeat":       True,
+        "requests_left":   rate["requests_left"],
+        "ratelimit_reset": rate["ratelimit_reset"]
+    })
 
 @app.route('/api/start_scan', methods=['POST'])
 @require_api_key
@@ -665,13 +803,19 @@ def api_data():
     return jsonify(get_chart_data())
 
 @app.route('/api/status')
-@rate_limiter
+@status_rate_limiter
 def api_status():
+    # rate_limiter has already pruned & stamped, and set:
+    #   g.rate_remaining = remaining requests after this one
+    #   g.rate_reset     = seconds until the next slot frees up
     return jsonify({
-        "scanning_status": scanning_status,
-        "scanning_mode": scanning_mode,
+        "scanning_status":    scanning_status,
+        "scanning_mode":      scanning_mode,
         "current_scanned_ip": current_scanned_ip,
-        "last_error": last_error_message
+        "last_error":         last_error_message,
+        "request_count":      g.rate_remaining,
+        "refresh_time":       g.rate_reset,
+        "current_ip_timeout": config.get("servertimeout", config["timeout_query"])
     })
 
 @app.route('/api/csv_status', methods=['GET'])
@@ -726,6 +870,15 @@ def sanitize_basic_string(value, allow_spaces=False):
         return ""
     pattern = r'[^a-zA-Z0-9_\-, ]' if allow_spaces else r'[^a-zA-Z0-9_\-]'
     return re.sub(pattern, '', value)
+
+
+def _global_rate_reset_loop():
+    while True:
+        time.sleep(WINDOW_SECONDS)
+        REQUESTS_PER_IP.clear()
+
+# kick off the daemon thread
+threading.Thread(target=_global_rate_reset_loop, daemon=True).start()
 
 ################################################
 # --------- [ Main entry ‑ Waitress bind ] ----#
