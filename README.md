@@ -81,7 +81,9 @@ Open `http://localhost:5000` (same machine) or `http://<server‑ip>:5000`.
 2. Click **Start Scanning**.  
 3. Watch the status panel update and the chart populate.
 
-![Start scanning button](docs/Start.png) <!-- optional screenshot -->
+![Start scanning button](docs/Start.png)
+
+> **Tip:** Let the crawler run continuously for **at least one month** to gather enough samples for reliable map‑popularity trends. Shorter runs can be skewed by daily fluctuations and special events.
 
 ---
 
