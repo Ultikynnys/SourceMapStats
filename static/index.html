@@ -55,128 +55,128 @@
     <!-- =========================================================
          MAIN APP
          ========================================================= -->
-         <div class="container">
-            <header>
-                <h1>Map Stats Visualization</h1>
-            </header>
-    
-            <div class="chart-params-container">
-                <!-- LEFT: chart + status -->
-                <div class="left-column">
-                    <section class="chart-box">
-                        <canvas id="chartCanvas" width="800" height="400"></canvas>
-                        <p id="playerCountDisplay"></p>
-                        <button id="refreshChart" class="btn">Refresh Chart</button>
-                    </section>
-    
-                    <section class="status-section">
-                        <h2>Status</h2>
-                        <div class="btn-group">
-                            <button id="startScan" class="btn">Start Scanning</button>
-                            <button id="stopScan"  class="btn">Stop Scanning</button>
-                        </div>
-                        <p id="scanningStatus">Scanning Status: Idle</p>
-                        <p id="scanningMode">Scanning Mode: None</p>
-                        <p id="currentIP">Current IP: None</p>
-                        <p id="lastError">Last Error: None</p>
-                        <p id="apiKeyState">API Key State: Unknown</p>
-    
-                        <!-- connection indicator (populated by JS) -->
-                        <p id="connectionStatus" class="disconnected">No server found</p>
-    
-                        <button id="refreshStatus" class="btn">Refresh Status</button>
-                    </section>
-                </div>
-    
-                <!-- RIGHT: parameters -->
-                <section class="params-section">
-                    <h2>Parameters</h2>
-                    <form id="paramsForm">
-                        <div class="form-group">
-                            <label for="apiKey">API Key:</label>
-                            <input type="text" id="apiKey" name="apiKey" value="">
-                        </div>
-    
-                        <!-- Maps‑to‑show dropdown 1‑10 -->
-                        <div class="form-group">
-                            <label for="MapsToShow">Maps To Show:</label>
-                            <select id="MapsToShow" name="MapsToShow">
-                                <option value="1">1</option>
-                                <option value="2">2</option>
-                                <option value="3">3</option>
-                                <option value="4">4</option>
-                                <option value="5">5</option>
-                                <option value="6">6</option>
-                                <option value="7">7</option>
-                                <option value="8">8</option>
-                                <option value="9">9</option>
-                                <option value="10" selected>10</option>
-                            </select>
-                        </div>
-    
-                        <div class="form-group">
-                            <label for="Start_Date">Start Date:</label>
-                            <input type="date" id="Start_Date" name="Start_Date" value="2001-10-02">
-                        </div>
-    
-                        <div class="form-group">
-                            <label for="End_Date">End Date:</label>
-                            <input type="date" id="End_Date" name="End_Date" value="2040-10-02">
-                        </div>
-    
-                        <div class="form-group">
-                            <label for="OnlyMapsContaining">Only Maps Containing:</label>
-                            <input type="text" id="OnlyMapsContaining" name="OnlyMapsContaining" value="dr_">
-                        </div>
-    
-                        <!-- Average‑days dropdown -->
-                        <div class="form-group">
-                            <label for="AverageDays">Days Per Point:</label>
-                            <select id="AverageDays" name="AverageDays">
-                                <option value="1" selected>1</option>
-                                <option value="2">2</option>
-                                <option value="3">3</option>
-                                <option value="7">7</option>
-                                <option value="30">30</option>
-                            </select>
-                        </div>
-    
-                        <!-- Hidden when key invalid -->
-                        <div class="form-group" id="fastWriteGroup" style="display:none;">
-                            <label for="FastWriteDelay">Fast Write Delay&nbsp;(min):</label>
-                            <input type="number" id="FastWriteDelay" name="FastWriteDelay" value="10">
-                        </div>
-                        <div class="form-group" id="runtimeMinutesGroup" style="display:none;">
-                            <label for="RuntimeMinutes">Runtime Minutes:</label>
-                            <input type="number" id="RuntimeMinutes" name="RuntimeMinutes" value="60">
-                        </div>
-    
-                        <div class="form-group">
-                            <label for="ColorIntensity">Color Intensity:</label>
-                            <input type="number" id="ColorIntensity" name="ColorIntensity" value="3">
-                        </div>
-    
-                        <!-- Game dropdown -->
-                        <div class="form-group">
-                            <label for="Game">Game:</label>
-                            <select id="Game" name="Game">
-                                <option value="tf" selected>Team Fortress 2 (tf)</option>
-                                <option value="csgo">Counter‑Strike: Global Offensive (csgo)</option>
-                                <option value="cstrike">Counter‑Strike: Source (cstrike)</option>
-                                <option value="dod">Day of Defeat: Source (dod)</option>
-                                <option value="hl2mp">Half‑Life 2: Deathmatch (hl2mp)</option>
-                                <option value="left4dead2">Left 4 Dead 2 (left4dead2)</option>
-                                <option value="left4dead">Left 4 Dead (left4dead)</option>
-                                <option value="garrysmod">Garry’s Mod (garrysmod)</option>
-                                <option value="insurgency">Insurgency (insurgency)</option>
-                                <option value="synergy">Synergy (synergy)</option>
-                                <option value="alienswarm">Alien Swarm (alienswarm)</option>
-                            </select>
-                        </div>
-                    </form>
+    <div class="container">
+        <header>
+            <h1>Map Stats Visualization</h1>
+        </header>
+
+        <div class="chart-params-container">
+            <!-- LEFT: chart + status -->
+            <div class="left-column">
+                <section class="chart-box">
+                    <canvas id="chartCanvas" width="800" height="400"></canvas>
+                    <p id="playerCountDisplay"></p>
+                    <button id="refreshChart" class="btn">Refresh Chart</button>
+                </section>
+
+                <section class="status-section">
+                    <h2>Status</h2>
+                    <div class="btn-group">
+                        <button id="startScan" class="btn">Start Scanning</button>
+                        <button id="stopScan"  class="btn">Stop Scanning</button>
+                    </div>
+                    <p id="scanningStatus">Scanning Status: Idle</p>
+                    <p id="scanningMode">Scanning Mode: None</p>
+                    <p id="currentIP">Current IP: None</p>
+                    <p id="lastError">Last Error: None</p>
+                    <p id="apiKeyState">API Key State: Unknown</p>
+
+                    <!-- connection indicator (populated by JS) -->
+                    <p id="connectionStatus" class="disconnected">No server found</p>
+
+                    <button id="refreshStatus" class="btn">Refresh Status</button>
                 </section>
             </div>
+
+            <!-- RIGHT: parameters -->
+            <section class="params-section">
+                <h2>Parameters</h2>
+                <form id="paramsForm">
+                    <div class="form-group">
+                        <label for="apiKey">API Key:</label>
+                        <input type="text" id="apiKey" name="apiKey" value="">
+                    </div>
+
+                    <!-- Maps‑to‑show dropdown 1‑10 -->
+                    <div class="form-group">
+                        <label for="MapsToShow">Maps To Show:</label>
+                        <select id="MapsToShow" name="MapsToShow">
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                            <option value="7">7</option>
+                            <option value="8">8</option>
+                            <option value="9">9</option>
+                            <option value="10" selected>10</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="Start_Date">Start Date:</label>
+                        <input type="date" id="Start_Date" name="Start_Date" value="2001-10-02">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="End_Date">End Date:</label>
+                        <input type="date" id="End_Date" name="End_Date" value="2040-10-02">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="OnlyMapsContaining">Only Maps Containing:</label>
+                        <input type="text" id="OnlyMapsContaining" name="OnlyMapsContaining" value="dr_">
+                    </div>
+
+                    <!-- Average‑days dropdown -->
+                    <div class="form-group">
+                        <label for="AverageDays">Days Per Point:</label>
+                        <select id="AverageDays" name="AverageDays">
+                            <option value="1" selected>1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="7">7</option>
+                            <option value="30">30</option>
+                        </select>
+                    </div>
+
+                    <!-- Hidden when key invalid -->
+                    <div class="form-group" id="fastWriteGroup" style="display:none;">
+                        <label for="FastWriteDelay">Fast Write Delay&nbsp;(min):</label>
+                        <input type="number" id="FastWriteDelay" name="FastWriteDelay" value="10">
+                    </div>
+                    <div class="form-group" id="runtimeMinutesGroup" style="display:none;">
+                        <label for="RuntimeMinutes">Runtime Minutes:</label>
+                        <input type="number" id="RuntimeMinutes" name="RuntimeMinutes" value="60">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ColorIntensity">Color Intensity:</label>
+                        <input type="number" id="ColorIntensity" name="ColorIntensity" value="3">
+                    </div>
+
+                    <!-- Game dropdown -->
+                    <div class="form-group">
+                        <label for="Game">Game:</label>
+                        <select id="Game" name="Game">
+                            <option value="tf" selected>Team Fortress 2 (tf)</option>
+                            <option value="csgo">Counter‑Strike: Global Offensive (csgo)</option>
+                            <option value="cstrike">Counter‑Strike: Source (cstrike)</option>
+                            <option value="dod">Day of Defeat: Source (dod)</option>
+                            <option value="hl2mp">Half‑Life 2: Deathmatch (hl2mp)</option>
+                            <option value="left4dead2">Left 4 Dead 2 (left4dead2)</option>
+                            <option value="left4dead">Left 4 Dead (left4dead)</option>
+                            <option value="garrysmod">Garry’s Mod (garrysmod)</option>
+                            <option value="insurgency">Insurgency (insurgency)</option>
+                            <option value="synergy">Synergy (synergy)</option>
+                            <option value="alienswarm">Alien Swarm (alienswarm)</option>
+                        </select>
+                    </div>
+                </form>
+            </section>
         </div>
+    </div>
 
     <!-- ================= FOOTER ================= -->
     <footer>
@@ -225,7 +225,7 @@
                 throw new Error('Rate Limit');
             }
 
-            /* Unauthorized ⇒ tell the UI the key is bad and abort */
+            /* Unauthorized handling: mark key invalid immediately */
             if (response.status === 401) {
                 document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
                 throw new Error('API key rejected by server');
@@ -242,20 +242,17 @@
         function sanitizeApiKey(key)  { return key.replace(/[^a-zA-Z0-9-_]/g, ''); }
         function isApiKeyValid(key)   { return key && key.length >= 10; }
 
-
+        /* --------------  SERVER‑SIDE KEY VALIDATION  -------------- */
         async function validateApiKey(key) {
-            // 1) Cheap local rule: ≥10 chars AND sanitised
             if (!isApiKeyValid(key)) return false;
-
-            // 2) Ask the back‑end; false on network/401/etc.
             try {
                 const res = await fetch('/api/validate_key', {
                     cache  : 'no-store',
                     headers: { 'X-API-KEY': key }
                 });
-                return res.ok;          // true ⇢ 200; false ⇢ 401/other
+                return res.ok;          // 200 ⇒ true, 401/other ⇒ false
             } catch (_) {
-                return false;           // network failure ⇒ treat as invalid
+                return false;           // network failure ⇒ invalid for now
             }
         }
 
@@ -286,15 +283,15 @@
         async function checkApiKeyState() {
             const apiKeyElem = document.getElementById('apiKey');
 
-            // 1) Sanitize visual field in place
-            const rawInput   = apiKeyElem.value;
-            const sanitised  = sanitizeApiKey(rawInput);
+            /* sanitize visible input */
+            const rawInput  = apiKeyElem.value;
+            const sanitised = sanitizeApiKey(rawInput);
             if (rawInput !== sanitised) apiKeyElem.value = sanitised;
 
-            // 2) Full validation (length + server round‑trip)
+            /* round‑trip validation */
             const valid = await validateApiKey(sanitised);
 
-            // 3) UI toggles
+            /* UI updates */
             document.getElementById('apiKeyState').textContent =
                 `API Key State: ${valid ? 'Valid' : 'Invalid'}`;
 
@@ -302,7 +299,6 @@
             document.getElementById('startScan').style.display    = valid ? 'inline-block' : 'none';
             document.getElementById('stopScan').style.display     = valid ? 'inline-block' : 'none';
 
-            /* show / hide extra parameter rows */
             const fastWrite   = document.getElementById('fastWriteGroup');
             const runtimeMins = document.getElementById('runtimeMinutesGroup');
             if (fastWrite && runtimeMins) {
@@ -310,7 +306,7 @@
                 runtimeMins.style.display = valid ? 'flex' : 'none';
             }
 
-            /* poll server status only while the key remains valid */
+            /* poll /api/status only while key remains valid */
             if (valid && !statusInterval) {
                 statusInterval = setInterval(() => refreshStatus().catch(console.error), 1_000);
             } else if (!valid && statusInterval) {
@@ -318,7 +314,6 @@
                 statusInterval = null;
             }
         }
-
         async function checkCSVStatus() {
             try {
                 const data = await doFetch('/api/csv_status');
@@ -395,24 +390,25 @@
             document.getElementById('scanningMode').textContent   = `Scanning Mode: ${s.scanning_mode}`;
             document.getElementById('currentIP').textContent      = `Current IP: ${s.current_scanned_ip || 'None'}`;
             document.getElementById('lastError').textContent      = `Last Error: ${s.last_error || 'None'}`;
+            /* keep the visible API‑key status accurate */
             checkApiKeyState();
         }
 
         /*  -----------------  INIT  ----------------- */
         document.addEventListener('DOMContentLoaded', async () => {
             updateConnectionStatus();   /* first ping   */
-            checkApiKeyState();
+            await checkApiKeyState();
             await checkCSVStatus();
             await refreshStatus();
             updateChart();
-
-            document.getElementById('apiKey').addEventListener('input',
-            () => checkApiKeyState().catch(console.error));
         });
         document.getElementById('refreshChart').addEventListener('click', updateChart);
         document.getElementById('startScan').addEventListener('click',   startScanning);
         document.getElementById('stopScan').addEventListener('click',    stopScanning);
         document.getElementById('refreshStatus').addEventListener('click', refreshStatus);
+        /* re‑validate on every keystroke */
+        document.getElementById('apiKey').addEventListener('input',
+            () => checkApiKeyState().catch(console.error));
     </script>
 </body>
 </html>
