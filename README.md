@@ -81,7 +81,7 @@ Open `http://localhost:5000` (same machine) or `http://<server‑ip>:5000`.
 2. Click **Start Scanning**.  
 3. Watch the status panel update and the chart populate.
 
-![Start scanning button](docs/start_scan_button.png) <!-- optional screenshot -->
+![Start scanning button](docs/Start.png) <!-- optional screenshot -->
 
 ---
 
@@ -123,5 +123,4 @@ Example:
 
 ```bash
 curl -H "X-API-KEY: YOURTOKEN" -X POST http://localhost:5000/api/start_scan
-```
 ```
