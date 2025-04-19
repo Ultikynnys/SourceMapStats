@@ -562,6 +562,12 @@ scanning_stop_event = threading.Event()
 # ---------------[ Flask Routes ]--------------#
 ################################################
 
+@app.route('/api/validate_key', methods=['GET'])
+@require_api_key             # <- rejects unknown keys with 401
+@rate_limiter
+def validate_key():          # Front‑end only needs the status code
+    return jsonify({"valid": True})
+
 @app.route('/api/heartbeat')
 @rate_limiter
 def heartbeat():
