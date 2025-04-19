@@ -42,7 +42,7 @@ http://127.0.0.1:5000
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/<you>/SourceMapStats.git
+git clone https://github.com/Ultikynnys/SourceMapStats.git
 cd SourceMapStats
 chmod +x run_app.sh
 ```
