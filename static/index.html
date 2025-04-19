@@ -225,6 +225,12 @@
                 throw new Error('Rate Limit');
             }
 
+            /* Unauthorized ⇒ tell the UI the key is bad and abort */
+            if (response.status === 401) {
+                document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
+                throw new Error('API key rejected by server');
+            }
+
             if (!response.ok) {
                 const data = await response.json().catch(() => ({}));
                 const msg  = data.error || `HTTP Error ${response.status}`;
@@ -235,6 +241,23 @@
         }
         function sanitizeApiKey(key)  { return key.replace(/[^a-zA-Z0-9-_]/g, ''); }
         function isApiKeyValid(key)   { return key && key.length >= 10; }
+
+
+        async function validateApiKey(key) {
+            // 1) Cheap local rule: ≥10 chars AND sanitised
+            if (!isApiKeyValid(key)) return false;
+
+            // 2) Ask the back‑end; false on network/401/etc.
+            try {
+                const res = await fetch('/api/validate_key', {
+                    cache  : 'no-store',
+                    headers: { 'X-API-KEY': key }
+                });
+                return res.ok;          // true ⇢ 200; false ⇢ 401/other
+            } catch (_) {
+                return false;           // network failure ⇒ treat as invalid
+            }
+        }
 
         /*  -----------------  CONNECTION STATUS  ----------------- */
         async function updateConnectionStatus () {
@@ -259,19 +282,27 @@
 
         /*  -----------------  STATUS  ----------------- */
         let statusInterval = null;
-        function checkApiKeyState() {
-            const apiKeyElem  = document.getElementById('apiKey');
-            const sanitized   = sanitizeApiKey(apiKeyElem.value);
-            if (apiKeyElem.value !== sanitized) apiKeyElem.value = sanitized;
 
-            const valid = isApiKeyValid(sanitized);
+        async function checkApiKeyState() {
+            const apiKeyElem = document.getElementById('apiKey');
+
+            // 1) Sanitize visual field in place
+            const rawInput   = apiKeyElem.value;
+            const sanitised  = sanitizeApiKey(rawInput);
+            if (rawInput !== sanitised) apiKeyElem.value = sanitised;
+
+            // 2) Full validation (length + server round‑trip)
+            const valid = await validateApiKey(sanitised);
+
+            // 3) UI toggles
             document.getElementById('apiKeyState').textContent =
                 `API Key State: ${valid ? 'Valid' : 'Invalid'}`;
+
             document.getElementById('refreshChart').style.display = 'inline-block';
             document.getElementById('startScan').style.display    = valid ? 'inline-block' : 'none';
             document.getElementById('stopScan').style.display     = valid ? 'inline-block' : 'none';
 
-            /* NEW ─ toggle visibility of parameter rows */
+            /* show / hide extra parameter rows */
             const fastWrite   = document.getElementById('fastWriteGroup');
             const runtimeMins = document.getElementById('runtimeMinutesGroup');
             if (fastWrite && runtimeMins) {
@@ -279,6 +310,7 @@
                 runtimeMins.style.display = valid ? 'flex' : 'none';
             }
 
+            /* poll server status only while the key remains valid */
             if (valid && !statusInterval) {
                 statusInterval = setInterval(() => refreshStatus().catch(console.error), 1_000);
             } else if (!valid && statusInterval) {
@@ -286,6 +318,7 @@
                 statusInterval = null;
             }
         }
+
         async function checkCSVStatus() {
             try {
                 const data = await doFetch('/api/csv_status');
@@ -372,6 +405,9 @@
             await checkCSVStatus();
             await refreshStatus();
             updateChart();
+
+            document.getElementById('apiKey').addEventListener('input',
+            () => checkApiKeyState().catch(console.error));
         });
         document.getElementById('refreshChart').addEventListener('click', updateChart);
         document.getElementById('startScan').addEventListener('click',   startScanning);
