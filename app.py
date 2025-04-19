@@ -84,6 +84,7 @@ def require_api_key(f):
 REQUESTS_PER_IP = {}          # { ip : [timestamps] }
 MAX_REQUESTS    = 30        # 30 requests per 15 seconds
 WINDOW_SECONDS  = 15          # 15‑second sliding window
+next_scan_time = None  # timestamp (float) when next fast scan may run
 
 # ---------------[ shared helper ]---------------- #
 def _ip_rate_info(ip: str, now: float):
@@ -645,14 +646,20 @@ def IpReaderMulti(list_ips):
     return datalist
 
 def Iterator(rawfilename, delay=None, FastScansTillSlow=15):
-    global scanning_mode
-    if delay is None:
-        delay = float(config["FastWriteDelay"])
+    global scanning_mode, current_scanned_ip, next_scan_time
 
-    end_time = None if config["RunForever"] else (time.time() + config["RuntimeMinutes"]*60)
+    # delay in seconds
+    delay_seconds = float(config.get("FastWriteDelay", 0)) * 60
+    # schedule first fast scan immediately
+    next_scan_time = time.time()
+
+    end_time = None if config["RunForever"] else (time.time() + config["RuntimeMinutes"] * 60)
     InternalPoint = FastScansTillSlow
 
     while not scanning_stop_event.is_set() and (end_time is None or time.time() < end_time):
+        now = time.time()
+
+        # ----- Slow scan branch -----
         if InternalPoint >= FastScansTillSlow:
             scanning_mode = "Slow"
             GetMaxScanIndex(rawfilename)
@@ -660,25 +667,32 @@ def Iterator(rawfilename, delay=None, FastScansTillSlow=15):
             if rows:
                 CSVWriter(rows, rawfilename)
             InternalPoint = 0
-        else:
+            # after a slow scan, allow the next fast scan immediately
+            next_scan_time = now
+
+        # ----- Fast scan branch -----
+        elif now >= next_scan_time:
             scanning_mode = "Fast"
             GetMaxScanIndex(rawfilename)
-            start_time = time.time()
-            rows = IpReaderMulti(FastScan(rawfilename))
-            if rows:
-                CSVWriter(rows, rawfilename)
-            elapsed = time.time() - start_time
-            if elapsed < 10:
-                InternalPoint = FastScansTillSlow
-            else:
-                InternalPoint += 1
-                for _ in range(int(delay * 60)):
-                    if scanning_stop_event.is_set():
-                        break
-                    time.sleep(1)
+            row_list = IpReaderMulti(FastScan(rawfilename))
+            if row_list:
+                CSVWriter(row_list, rawfilename)
+            InternalPoint += 1
+            # schedule next fast scan
+            next_scan_time = time.time() + delay_seconds
 
-    scanning_status = "Idle"
+        # ----- Cooldown (waiting) branch -----
+        else:
+            scanning_mode = "Cooldown"
+            current_scanned_ip = ""  # clear during cooldown
+            # wait until either stop_event is set or delay elapses
+            wait_time = next_scan_time - now
+            scanning_stop_event.wait(wait_time)
+
+    # once loop exits, mark idle
     scanning_mode = "None"
+    scanning_status = "Idle"
+    current_scanned_ip = ""
 
 def scan_loop():
     base_dir = os.path.dirname(os.path.realpath(__file__))
@@ -755,7 +769,8 @@ def update_params():
     new_params = reject_unknown_keys(allowed_keys, new_params)
 
     for key, value in new_params.items():
-        if key in {"MapsToShow", "Percision", "AverageDays", "FastWriteDelay",
+        if key in {"MapsToShow", "Percision", "AverageDays", ""
+        "WriteDelay",
                    "RuntimeMinutes", "ColorIntensity"}:
             sanitized = sanitize_int(value, min_val=0, max_val=10000)
             if sanitized is not None:
@@ -805,9 +820,17 @@ def api_data():
 @app.route('/api/status')
 @status_rate_limiter
 def api_status():
-    # rate_limiter has already pruned & stamped, and set:
-    #   g.rate_remaining = remaining requests after this one
-    #   g.rate_reset     = seconds until the next slot frees up
+    """
+    Returns live scanning status, plus how many seconds remain
+    before the next fast scan can fire.
+    """
+    global next_scan_time
+    now = time.time()
+    if scanning_mode == "Cooldown" and next_scan_time:
+        cooldown_remaining = max(0, int(next_scan_time - now))
+    else:
+        cooldown_remaining = 0
+
     return jsonify({
         "scanning_status":    scanning_status,
         "scanning_mode":      scanning_mode,
@@ -815,7 +838,8 @@ def api_status():
         "last_error":         last_error_message,
         "request_count":      g.rate_remaining,
         "refresh_time":       g.rate_reset,
-        "current_ip_timeout": config.get("servertimeout", config["timeout_query"])
+        "current_ip_timeout": config.get("servertimeout", config["timeout_query"]),
+        "cooldown_remaining": cooldown_remaining
     })
 
 @app.route('/api/csv_status', methods=['GET'])

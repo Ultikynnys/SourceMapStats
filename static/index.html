@@ -77,6 +77,7 @@
                     </div>
                     <p id="scanningStatus">Scanning Status: Idle</p>
                     <p id="scanningMode">Scanning Mode: None</p>
+                    <p id="cooldownRemaining">Cooldown Remaining: — s</p>
                     <p id="currentIP">Current IP: None</p>
                     <p id="lastError">Last Error: None</p>
                     <p id="requestsLeft">Requests Left: —</p>
@@ -435,23 +436,26 @@
             } catch (e) { console.error(e); }
         }
         async function fetchStatus()    { return doFetch('/api/status'); }
+
+        
         async function refreshStatus() {
     try {
-        const s = await fetchStatus();
+      const s = await fetchStatus();
 
-        document.getElementById('scanningStatus').textContent =
-            `Scanning Status: ${s.scanning_status}`;
-        document.getElementById('scanningMode').textContent =
-            `Scanning Mode: ${s.scanning_mode}`;
-        document.getElementById('currentIP').textContent =
-            `Current IP: ${s.current_scanned_ip || 'None'}`;
-        document.getElementById('lastError').textContent =
-            `Last Error: ${s.last_error || 'None'}`;
+      document.getElementById('scanningStatus').textContent =
+        `Scanning Status: ${s.scanning_status}`;
+      document.getElementById('scanningMode').textContent =
+        `Scanning Mode: ${s.scanning_mode}`;
+      document.getElementById('currentIP').textContent =
+        `Current IP: ${s.current_scanned_ip || 'None'}`;
+      document.getElementById('lastError').textContent =
+        `Last Error: ${s.last_error || 'None'}`;
+      document.getElementById('cooldownRemaining').textContent =
+        `Cooldown Remaining: ${s.cooldown_remaining}s`;
     } catch (e) {
-        console.error('Failed to refresh status:', e);
+      console.error('Failed to refresh status:', e);
     }
-}
-
+  }
 
         /*  -----------------  INIT  ----------------- */
         document.addEventListener('DOMContentLoaded', async () => {
