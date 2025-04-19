@@ -79,7 +79,11 @@
                     <p id="scanningMode">Scanning Mode: None</p>
                     <p id="currentIP">Current IP: None</p>
                     <p id="lastError">Last Error: None</p>
+                    <p id="requestsLeft">Requests Left: —</p>
+                    <p id="ratelimitReset">Rate‑limit Reset In: — s</p>
+                    <p id="ipTimeout">IP‑Scan Timeout: — s</p>
                     <p id="apiKeyState">API Key State: Unknown</p>
+                    
 
                     <!-- connection indicator (populated by JS) -->
                     <p id="connectionStatus" class="disconnected">No server found</p>
@@ -261,25 +265,36 @@
         }
 
         /*  -----------------  CONNECTION STATUS  ----------------- */
-        async function updateConnectionStatus () {
+        async function updateConnectionStatus() {
             const el = document.getElementById('connectionStatus');
             try {
-                const res = await fetch('/api/heartbeat', { cache: 'no-store' });
-                if (res.ok) {
-                    el.textContent = 'Connected';
-                    el.classList.remove('disconnected');
-                    el.classList.add('connected');
-                } else {
-                    throw new Error('Heartbeat failed');
-                }
-            } catch (_) {
+                // Free heartbeat + rate‑limit info
+                const data = await fetch('/api/heartbeat', { cache: 'no-store' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Heartbeat failed');
+                        return res.json();
+                    });
+
+                // Connection indicator
+                el.textContent = 'Connected';
+                el.classList.remove('disconnected');
+                el.classList.add('connected');
+
+                // Update rate‑limit UI
+                document.getElementById('requestsLeft').textContent =
+                    `Requests Left: ${data.requests_left}`;
+                document.getElementById('ratelimitReset').textContent =
+                    `Rate‑limit Reset In: ${data.ratelimit_reset}s`;
+            } catch (e) {
+                // If fetch fails or server down
                 el.textContent = 'No server found';
                 el.classList.remove('connected');
                 el.classList.add('disconnected');
             }
         }
+
         /* ping immediately, then every 5 s */
-        setInterval(updateConnectionStatus, 5_000);
+        setInterval(updateConnectionStatus, 1000);
 
         /*  -----------------  STATUS / KEY HANDLING  ----------------- */
         let statusInterval = null;
@@ -421,14 +436,22 @@
         }
         async function fetchStatus()    { return doFetch('/api/status'); }
         async function refreshStatus() {
-            const s = await fetchStatus();
-            document.getElementById('scanningStatus').textContent = `Scanning Status: ${s.scanning_status}`;
-            document.getElementById('scanningMode').textContent   = `Scanning Mode: ${s.scanning_mode}`;
-            document.getElementById('currentIP').textContent      = `Current IP: ${s.current_scanned_ip || 'None'}`;
-            document.getElementById('lastError').textContent      = `Last Error: ${s.last_error || 'None'}`;
-            /* keep the visible API‑key status accurate */
-            checkApiKeyState();
-        }
+    try {
+        const s = await fetchStatus();
+
+        document.getElementById('scanningStatus').textContent =
+            `Scanning Status: ${s.scanning_status}`;
+        document.getElementById('scanningMode').textContent =
+            `Scanning Mode: ${s.scanning_mode}`;
+        document.getElementById('currentIP').textContent =
+            `Current IP: ${s.current_scanned_ip || 'None'}`;
+        document.getElementById('lastError').textContent =
+            `Last Error: ${s.last_error || 'None'}`;
+    } catch (e) {
+        console.error('Failed to refresh status:', e);
+    }
+}
+
 
         /*  -----------------  INIT  ----------------- */
         document.addEventListener('DOMContentLoaded', async () => {
