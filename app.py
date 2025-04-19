@@ -32,8 +32,6 @@ app = Flask(__name__, static_folder='static')
 # Load and Validate Accepted API Keys Securely
 # ------------------------------------------------
 
-dirname = os.path.dirname(os.path.abspath(__file__))
-
 keys_file = os.path.join(dirname, 'config_keys.json')
 if not os.path.exists(keys_file):
     raise RuntimeError("Missing config_keys.json file with accepted API keys!")
@@ -48,31 +46,24 @@ ACCEPTED_KEYS = set(keys_data.get("accepted_keys", []))
 # ------------------------------------------------
 
 def sanitize_api_key(key):
-    """
-    Remove any characters that are not alphanumeric, dash, or underscore.
-    """
+    """Remove any characters that are not alphanumeric, dash, or underscore."""
     return re.sub(r'[^a-zA-Z0-9-_]', '', key) if key else key
 
 def is_ip_address(ip):
-    """
-    Checks if the provided string is a valid IPv4 or IPv6 address.
-    """
+    """Checks if the provided string is a valid IPv4 or IPv6 address."""
     pattern = re.compile(
         r"^(([0-1]?\d?\d|2[0-4]\d|25[0-5])(\.|$)){4}|([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$"
     )
     return pattern.match(ip) is not None
 
 def reject_unknown_keys(allowed_keys, incoming_dict):
-    """
-    Remove keys from 'incoming_dict' that are not in 'allowed_keys'.
-    """
+    """Remove keys from 'incoming_dict' that are not in 'allowed_keys'."""
     return {k: v for k, v in incoming_dict.items() if k in allowed_keys}
 
 def require_api_key(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        provided_key = request.headers.get('X-API-KEY')
-        provided_key = sanitize_api_key(provided_key)
+        provided_key = sanitize_api_key(request.headers.get('X-API-KEY', ''))
         if provided_key not in ACCEPTED_KEYS:
             return jsonify({"error": "Unauthorized"}), 401
         return f(*args, **kwargs)
@@ -83,22 +74,19 @@ def require_api_key(f):
 ################################################
 
 REQUESTS_PER_IP = {}  # { ip_string : [list_of_timestamps] }
-MAX_REQUESTS = 10
-WINDOW_SECONDS = 60
+MAX_REQUESTS = 3
+WINDOW_SECONDS = 1
 
 def rate_limiter(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        # 1) Check if a valid API key was provided
         provided_key = request.headers.get('X-API-KEY', '')
-        # If it's a valid key, skip rate limiting entirely
         if provided_key in ACCEPTED_KEYS:
+            # authenticated users skip IP rate limit
             return f(*args, **kwargs)
 
-        # Otherwise, apply IP-based limit
         now = time.time()
         remote_addr = request.remote_addr or 'unknown'
-
         timestamps = REQUESTS_PER_IP.setdefault(remote_addr, [])
         cutoff = now - WINDOW_SECONDS
         while timestamps and timestamps[0] < cutoff:
@@ -107,12 +95,6 @@ def rate_limiter(f):
         if len(timestamps) >= MAX_REQUESTS:
             next_reset = timestamps[0] + WINDOW_SECONDS
             cooldown = max(0, next_reset - now)
-
-            print(
-                f"[RATE-LIMIT] IP {remote_addr} is rate-limited. "
-                f"Requests in current window: {len(timestamps)}, "
-                f"cooldown: {cooldown:.2f}s left."
-            )
             return jsonify({
                 "error": "Too many requests, slow down.",
                 "cooldown": cooldown
@@ -131,18 +113,13 @@ MAX_STORED_REQUESTS_PER_IP = 50
 
 @app.before_request
 def log_incoming_request():
-    """
-    Before every request, log the IP, timestamp, method, and path in RECENT_REQUESTS_LOG.
-    """
     ip = request.remote_addr or 'unknown'
-    req_info = (datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
-                request.method,
-                request.path)
-
-    if ip not in RECENT_REQUESTS_LOG:
-        RECENT_REQUESTS_LOG[ip] = []
-    RECENT_REQUESTS_LOG[ip].append(req_info)
-
+    req_info = (
+        datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+        request.method,
+        request.path
+    )
+    RECENT_REQUESTS_LOG.setdefault(ip, []).append(req_info)
     if len(RECENT_REQUESTS_LOG[ip]) > MAX_STORED_REQUESTS_PER_IP:
         RECENT_REQUESTS_LOG[ip].pop(0)
 
@@ -315,21 +292,16 @@ def duplicate_merger(chunks):
                 count = 0
             scan_index = row[6] if len(row) > 6 else "0"
             scan_indexes.add(scan_index)
-            if mapname not in map_counts:
-                map_counts[mapname] = 0
-            map_counts[mapname] += count
+            map_counts[mapname] = map_counts.get(mapname, 0) + count
 
-        num_scans = len(scan_indexes) if scan_indexes else 1
+        num_scans = len(scan_indexes) or 1
         merged[chunk_key] = {
-            mapname: (map_counts[mapname] / num_scans) for mapname in map_counts
+            mapname: (map_counts[mapname] / num_scans)
+            for mapname in map_counts
         }
     return merged
 
 def get_chart_data():
-    """
-    Retrieves the data for the chart, including labels, datasets,
-    average daily count, total players, and other stats.
-    """
     raw = RawData()
     filtered = filter_by_timerange(raw)
     if not filtered:
@@ -349,30 +321,25 @@ def get_chart_data():
     whitelist = weakfiller(overall, config["OnlyMapsContaining"])
     filtered_overall = dictlimx(overall, whitelist)
 
-    # Sort by largest overall sum, then pick top N
     all_filtered_maps_sorted = sorted(filtered_overall.items(), key=lambda item: item[1], reverse=True)
     top_maps = [k for k, _ in all_filtered_maps_sorted[:config["MapsToShow"]]]
 
-    # Prepare labels (the chunk keys = dates) in sorted order
     labels = sorted(merged_chunks.keys())
 
-    # Prepare data sets for the chosen top maps
     datasets = {mapname: [] for mapname in top_maps}
     other_data = []
 
     for label in labels:
         chunk_data = merged_chunks[label]
-        filtered_chunk_data = {m: c for m, c in chunk_data.items() if m in whitelist}
+        filtered_chunk_data = {m: chunk_data.get(m, 0) for m in whitelist}
         filtered_chunk_total = sum(filtered_chunk_data.values())
         top_total = 0
         for mapname in top_maps:
-            count = filtered_chunk_data.get(mapname, 0)
-            datasets[mapname].append(count)
-            top_total += count
-        # The remainder is for any maps that didn't make the top list
+            val = filtered_chunk_data.get(mapname, 0)
+            datasets[mapname].append(val)
+            top_total += val
         other_data.append(filtered_chunk_total - top_total)
 
-    # Gather all rows that match the whitelist maps
     filtered_rows_all = [
         row for rows in chunks.values() for row in rows
         if suffix_filter(row[2]) in whitelist
@@ -380,23 +347,13 @@ def get_chart_data():
     total_players_filtered = sum(int(row[3]) for row in filtered_rows_all)
     unique_scans_all = set(row[6] if len(row) > 6 else "0" for row in filtered_rows_all)
 
-    # Average daily players
-    if unique_scans_all:
-        average_daily = round(total_players_filtered / len(unique_scans_all), config["Percision"])
-    else:
-        average_daily = 0
+    average_daily = round(total_players_filtered / len(unique_scans_all), config["Percision"]) if unique_scans_all else 0
 
-    # Summation across all chunks for "totalPlayers"
-    total_players = sum(
-        sum(int(row[3]) for row in rows if suffix_filter(row[2]) in whitelist)
-        for rows in chunks.values()
-    )
-    if unique_scans_all:
-        total_players = round(total_players / len(unique_scans_all), config["Percision"])
-    else:
-        total_players = 0
+    total_players = 0
+    for rows in chunks.values():
+        total_players += sum(int(row[3]) for row in rows if suffix_filter(row[2]) in whitelist)
+    total_players = round(total_players / len(unique_scans_all), config["Percision"]) if unique_scans_all else 0
 
-    # Build the dataset list with color assignments
     dataset_list = []
     total_top = len(top_maps)
     for idx, mapname in enumerate(top_maps):
@@ -482,7 +439,6 @@ def SlowScan():
             for address in addresses:
                 ips.append(address)
                 servercount += 1
-        print(f"Servers found in MasterServer: {servercount}")
     except Exception as e:
         print("Master Server Timed out!!", e)
     return ips
@@ -537,17 +493,17 @@ def FastScan(rawfilename, TestIp=[('176.57.188.166', 27015)], Testmode=False):
     return iplist
 
 def IpReaderMulti(list_ips):
-    ips2 = []
     GlobalFlush()
     global current_scanned_ip
     total_ips = len(list_ips)
+    datalist = []
     for idx, address in enumerate(list_ips, start=1):
         current_scanned_ip = f"scanning {idx}/{total_ips}: {address[0]}:{address[1]}"
-        datastack = IpReader(address)
-        if datastack is not None:
-            ips2.append(datastack)
+        row = IpReader(address)
+        if row is not None:
+            datalist.append(row)
     current_scanned_ip = ""
-    return ips2
+    return datalist
 
 def Iterator(rawfilename, delay=None, FastScansTillSlow=15):
     global scanning_mode
@@ -561,7 +517,6 @@ def Iterator(rawfilename, delay=None, FastScansTillSlow=15):
         if InternalPoint >= FastScansTillSlow:
             scanning_mode = "Slow"
             GetMaxScanIndex(rawfilename)
-            print(f"SLOW SEARCH: Master Server every {FastScansTillSlow*delay} minutes (approx).")
             rows = IpReaderMulti(SlowScan())
             if rows:
                 CSVWriter(rows, rawfilename)
@@ -576,16 +531,15 @@ def Iterator(rawfilename, delay=None, FastScansTillSlow=15):
             elapsed = time.time() - start_time
             if elapsed < 10:
                 InternalPoint = FastScansTillSlow
-                print("Fast scan took less than 10 seconds. Doing slow scan next.")
             else:
                 InternalPoint += 1
-                print(f"FAST SCAN done. Sleeping for {delay} minutes.")
                 for _ in range(int(delay * 60)):
                     if scanning_stop_event.is_set():
                         break
                     time.sleep(1)
 
-    print("Scan complete or forcibly stopped.")
+    scanning_status = "Idle"
+    scanning_mode = "None"
 
 def scan_loop():
     base_dir = os.path.dirname(os.path.realpath(__file__))
@@ -599,6 +553,15 @@ scanning_stop_event = threading.Event()
 ################################################
 # ---------------[ Flask Routes ]--------------#
 ################################################
+
+@app.route('/api/heartbeat')
+@rate_limiter
+def heartbeat():
+    """
+    Simple ping endpoint for frontend heartbeat checks.
+    Returns HTTP 200 + JSON payload so client marks 'Connected'.
+    """
+    return jsonify({"heartbeat": True})
 
 @app.route('/api/start_scan', methods=['POST'])
 @require_api_key
@@ -626,50 +589,27 @@ def stop_scan():
     current_scanned_ip = ""
     return jsonify({"status": "Scanning stopped."})
 
-def sanitize_int(value, min_val=0, max_val=999999):
-    try:
-        val = int(value)
-        val = max(min_val, min(val, max_val))
-        return val
-    except (ValueError, TypeError):
-        return None
-
-def sanitize_date(value):
-    try:
-        dt = datetime.strptime(value, '%Y-%m-%d')
-        return dt.strftime('%Y-%m-%d')
-    except (ValueError, TypeError):
-        return None
-
-def sanitize_basic_string(value, allow_spaces=False):
-    if not value:
-        return ""
-    if allow_spaces:
-        return re.sub(r'[^a-zA-Z0-9_\-, ]', '', value)
-    else:
-        return re.sub(r'[^a-zA-Z0-9_\-]', '', value)
-
+# —— This endpoint is now open to unauthenticated users (rate limited), so they can update params.
 @app.route('/api/update_params', methods=['POST'])
-@require_api_key
 @rate_limiter
 def update_params():
-    allowed_keys = set([
+    allowed_keys = {
         "MapsToShow", "Percision", "AverageDays", "FastWriteDelay",
         "RuntimeMinutes", "ColorIntensity", "Start_Date", "End_Date",
         "OnlyMapsContaining", "regionserver", "Game", "RunForever"
-    ])
+    }
 
     new_params = request.get_json() or {}
     new_params = reject_unknown_keys(allowed_keys, new_params)
 
     for key, value in new_params.items():
-        if key in ["MapsToShow", "Percision", "AverageDays", "FastWriteDelay",
-                   "RuntimeMinutes", "ColorIntensity"]:
+        if key in {"MapsToShow", "Percision", "AverageDays", "FastWriteDelay",
+                   "RuntimeMinutes", "ColorIntensity"}:
             sanitized = sanitize_int(value, min_val=0, max_val=10000)
             if sanitized is not None:
                 config[key] = sanitized
 
-        elif key in ["Start_Date", "End_Date"]:
+        elif key in {"Start_Date", "End_Date"}:
             sanitized = sanitize_date(value)
             if sanitized:
                 config[key] = sanitized
@@ -681,9 +621,7 @@ def update_params():
                 if split_list:
                     config[key] = split_list
             elif isinstance(value, list):
-                final_list = []
-                for item in value:
-                    final_list.append(sanitize_basic_string(str(item), allow_spaces=False))
+                final_list = [sanitize_basic_string(str(item), allow_spaces=False) for item in value]
                 config[key] = final_list
 
         elif key == "regionserver":
@@ -691,20 +629,15 @@ def update_params():
             config[key] = sanitized_value or "all"
 
         elif key == "Game":
-            # Whitelist check
             sanitized_game = sanitize_basic_string(value, allow_spaces=False).lower()
             valid_games = {"tf", "cstrike", "csgo", "css", "dod", "hl2mp", "left4dead", "left4dead2"}
-            if sanitized_game in valid_games:
-                config[key] = sanitized_game
-            else:
-                config[key] = "tf"
+            config[key] = sanitized_game if sanitized_game in valid_games else "tf"
 
         elif key == "RunForever":
             if isinstance(value, bool):
                 config[key] = value
             else:
-                str_val = str(value).lower()
-                config[key] = (str_val == 'true')
+                config[key] = str(value).lower() == 'true'
 
     return jsonify({"status": "Parameters updated", "config": config})
 
@@ -715,8 +648,7 @@ def get_params():
 @app.route('/api/data')
 @rate_limiter
 def api_data():
-    data = get_chart_data()
-    return jsonify(data)
+    return jsonify(get_chart_data())
 
 @app.route('/api/status')
 @rate_limiter
@@ -748,23 +680,38 @@ def csv_status():
 def api_connections():
     unique_ips = list(RECENT_REQUESTS_LOG.keys())
     ip_count = len(unique_ips)
-    connections_data = {}
+    details = {}
     for ip, entries in RECENT_REQUESTS_LOG.items():
-        connections_data[ip] = []
-        for entry in entries:
-            connections_data[ip].append({
-                "time": entry[0],
-                "method": entry[1],
-                "path": entry[2]
-            })
+        details[ip] = [{"time": t, "method": m, "path": p} for t, m, p in entries]
     return jsonify({
         "unique_ip_count": ip_count,
-        "details": connections_data
+        "details": details
     })
 
 @app.route('/')
 def index():
     return app.send_static_file('index.html')
+
+# Utility sanitizers used in update_params:
+def sanitize_int(value, min_val=0, max_val=999999):
+    try:
+        val = int(value)
+        return max(min_val, min(val, max_val))
+    except:
+        return None
+
+def sanitize_date(value):
+    try:
+        dt = datetime.strptime(value, '%Y-%m-%d')
+        return dt.strftime('%Y-%m-%d')
+    except:
+        return None
+
+def sanitize_basic_string(value, allow_spaces=False):
+    if not value:
+        return ""
+    pattern = r'[^a-zA-Z0-9_\-, ]' if allow_spaces else r'[^a-zA-Z0-9_\-]'
+    return re.sub(pattern, '', value)
 
 if __name__ == "__main__":
     serve(app, host="127.0.0.1", port=5000)

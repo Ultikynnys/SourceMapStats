@@ -8,7 +8,7 @@ Untitled.ipynb
 *.vsidx
 *.lock
 *.sqlite
-*.json
+
 venv2/
 .vs/
 output.csv
