@@ -182,9 +182,8 @@
     <footer>
         <div class="footer-content">
             <p class="description">
-                <strong>SourceMapStats</strong> is a Source&nbsp;Master&nbsp;Server map‑statistics tool.
-                It gathers player frequency for every map in a selected game, then filters that data
-                into a visualization chart so you can instantly see player counts per map and game‑mode.
+                <strong>SourceMapStats</strong> is a map‑statistics tool that queries the Source Master Server,
+                gathers player frequency per map, and renders that data as an interactive chart.
             </p>
             <p class="copyright">&copy; Ultikynnys 2025</p>
         </div>
@@ -211,24 +210,25 @@
             const rawKey       = document.getElementById('apiKey')?.value || '';
             const sanitizedKey = rawKey.replace(/[^a-zA-Z0-9-_]/g, '');
 
+            /* send header only when length ≥ 10 */
             if (sanitizedKey.length >= 10) options.headers['X-API-KEY'] = sanitizedKey;
 
             const response = await fetch(url, options);
 
             /* Rate‑limit handling */
             if (response.status === 429) {
-                const data      = await response.json().catch(() => ({}));
-                const cooldown  = 1;        /* seconds */
+                const data     = await response.json().catch(() => ({}));
+                const cooldown = 1;        /* seconds */
                 alert(`Rate Limited: ${data.error || 'Too many requests'}. Cool‑down: ${cooldown}s`);
                 setAllButtonsDisabled(true);
                 setTimeout(() => setAllButtonsDisabled(false), cooldown * 1000);
                 throw new Error('Rate Limit');
             }
 
-            /* Unauthorized handling: mark key invalid immediately */
+            /* Unauthorized → mark key invalid immediately */
             if (response.status === 401) {
                 document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
-                throw new Error('API key rejected by server');
+                throw new Error('Unauthorized');
             }
 
             if (!response.ok) {
@@ -240,7 +240,7 @@
             return response.json();
         }
         function sanitizeApiKey(key)  { return key.replace(/[^a-zA-Z0-9-_]/g, ''); }
-        function isApiKeyValid(key)   { return key && key.length >= 10; }
+        function isApiKeyValid(key)   { return key && key.length >= 10; }  /* STRICT 10‑char min */
 
         /* --------------  SERVER‑SIDE KEY VALIDATION  -------------- */
         async function validateApiKey(key) {
@@ -288,32 +288,53 @@
             const sanitised = sanitizeApiKey(rawInput);
             if (rawInput !== sanitised) apiKeyElem.value = sanitised;
 
-            /* round‑trip validation */
-            const valid = await validateApiKey(sanitised);
-
-            /* UI updates */
-            document.getElementById('apiKeyState').textContent =
-                `API Key State: ${valid ? 'Valid' : 'Invalid'}`;
-
-            document.getElementById('refreshChart').style.display = 'inline-block';
-            document.getElementById('startScan').style.display    = valid ? 'inline-block' : 'none';
-            document.getElementById('stopScan').style.display     = valid ? 'inline-block' : 'none';
-
-            const fastWrite   = document.getElementById('fastWriteGroup');
-            const runtimeMins = document.getElementById('runtimeMinutesGroup');
-            if (fastWrite && runtimeMins) {
-                fastWrite.style.display   = valid ? 'flex' : 'none';
-                runtimeMins.style.display = valid ? 'flex' : 'none';
+            /* length gate first */
+            if (!isApiKeyValid(sanitised)) {
+                showInvalidState('Too short (min 10)');
+                return;
             }
 
-            /* poll /api/status only while key remains valid */
-            if (valid && !statusInterval) {
+            /* round‑trip validation */
+            const serverOK = await validateApiKey(sanitised);
+            if (!serverOK) {
+                showInvalidState('Invalid');
+                return;
+            }
+
+            /* === valid key === */
+            document.getElementById('apiKeyState').textContent = 'API Key State: Valid';
+
+            document.getElementById('refreshChart').style.display = 'inline-block';
+            document.getElementById('startScan').style.display    = 'inline-block';
+            document.getElementById('stopScan').style.display     = 'inline-block';
+
+            toggleExtraParams(true);
+
+            if (!statusInterval) {
                 statusInterval = setInterval(() => refreshStatus().catch(console.error), 1_000);
-            } else if (!valid && statusInterval) {
+            }
+        }
+
+        function showInvalidState(reason) {
+            document.getElementById('apiKeyState').textContent = `API Key State: ${reason}`;
+            document.getElementById('startScan').style.display = 'none';
+            document.getElementById('stopScan').style.display  = 'none';
+            toggleExtraParams(false);
+            if (statusInterval) {
                 clearInterval(statusInterval);
                 statusInterval = null;
             }
         }
+
+        function toggleExtraParams(show) {
+            const fastWrite   = document.getElementById('fastWriteGroup');
+            const runtimeMins = document.getElementById('runtimeMinutesGroup');
+            if (fastWrite && runtimeMins) {
+                fastWrite.style.display   = show ? 'flex' : 'none';
+                runtimeMins.style.display = show ? 'flex' : 'none';
+            }
+        }
+
         async function checkCSVStatus() {
             try {
                 const data = await doFetch('/api/csv_status');
@@ -381,8 +402,22 @@
         }, 1_000);
 
         /*  -----------------  SCAN / STATUS BUTTONS  ----------------- */
-        async function startScanning()  { const res = await doFetch('/api/start_scan', { method:'POST' }); alert(res.status || res.error); }
-        async function stopScanning()   { const res = await doFetch('/api/stop_scan',  { method:'POST' }); alert(res.status || res.error); }
+        async function startScanning() {
+            const key = sanitizeApiKey(document.getElementById('apiKey').value);
+            if (!isApiKeyValid(key)) { alert('API key must be at least 10 characters.'); return; }
+            try {
+                const res = await doFetch('/api/start_scan', { method:'POST' });
+                alert(res.status || res.error);
+            } catch (e) { console.error(e); }
+        }
+        async function stopScanning() {
+            const key = sanitizeApiKey(document.getElementById('apiKey').value);
+            if (!isApiKeyValid(key)) { alert('API key must be at least 10 characters.'); return; }
+            try {
+                const res = await doFetch('/api/stop_scan', { method:'POST' });
+                alert(res.status || res.error);
+            } catch (e) { console.error(e); }
+        }
         async function fetchStatus()    { return doFetch('/api/status'); }
         async function refreshStatus() {
             const s = await fetchStatus();
