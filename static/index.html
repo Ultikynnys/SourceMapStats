@@ -55,88 +55,128 @@
     <!-- =========================================================
          MAIN APP
          ========================================================= -->
-    <div class="container">
-        <header>
-            <h1>Map Stats Visualization</h1>
-        </header>
-
-        <div class="chart-params-container">
-            <!-- LEFT: chart + status -->
-            <div class="left-column">
-                <section class="chart-box">
-                    <canvas id="chartCanvas" width="800" height="400"></canvas>
-                    <p id="playerCountDisplay"></p>
-                    <button id="refreshChart" class="btn">Refresh Chart</button>
-                </section>
-
-                <section class="status-section">
-                    <h2>Status</h2>
-                    <div class="btn-group">
-                        <button id="startScan" class="btn">Start Scanning</button>
-                        <button id="stopScan"  class="btn">Stop Scanning</button>
-                    </div>
-                    <p id="scanningStatus">Scanning Status: Idle</p>
-                    <p id="scanningMode">Scanning Mode: None</p>
-                    <p id="currentIP">Current IP: None</p>
-                    <p id="lastError">Last Error: None</p>
-                    <p id="apiKeyState">API Key State: Unknown</p>
-
-                    <!-- NEW: connection indicator (populated by JS) -->
-                    <p id="connectionStatus" class="disconnected">No server found</p>
-
-                    <button id="refreshStatus" class="btn">Refresh Status</button>
+         <div class="container">
+            <header>
+                <h1>Map Stats Visualization</h1>
+            </header>
+    
+            <div class="chart-params-container">
+                <!-- LEFT: chart + status -->
+                <div class="left-column">
+                    <section class="chart-box">
+                        <canvas id="chartCanvas" width="800" height="400"></canvas>
+                        <p id="playerCountDisplay"></p>
+                        <button id="refreshChart" class="btn">Refresh Chart</button>
+                    </section>
+    
+                    <section class="status-section">
+                        <h2>Status</h2>
+                        <div class="btn-group">
+                            <button id="startScan" class="btn">Start Scanning</button>
+                            <button id="stopScan"  class="btn">Stop Scanning</button>
+                        </div>
+                        <p id="scanningStatus">Scanning Status: Idle</p>
+                        <p id="scanningMode">Scanning Mode: None</p>
+                        <p id="currentIP">Current IP: None</p>
+                        <p id="lastError">Last Error: None</p>
+                        <p id="apiKeyState">API Key State: Unknown</p>
+    
+                        <!-- connection indicator (populated by JS) -->
+                        <p id="connectionStatus" class="disconnected">No server found</p>
+    
+                        <button id="refreshStatus" class="btn">Refresh Status</button>
+                    </section>
+                </div>
+    
+                <!-- RIGHT: parameters -->
+                <section class="params-section">
+                    <h2>Parameters</h2>
+                    <form id="paramsForm">
+                        <div class="form-group">
+                            <label for="apiKey">API Key:</label>
+                            <input type="text" id="apiKey" name="apiKey" value="">
+                        </div>
+    
+                        <!-- Maps‑to‑show dropdown 1‑10 -->
+                        <div class="form-group">
+                            <label for="MapsToShow">Maps To Show:</label>
+                            <select id="MapsToShow" name="MapsToShow">
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10" selected>10</option>
+                            </select>
+                        </div>
+    
+                        <div class="form-group">
+                            <label for="Start_Date">Start Date:</label>
+                            <input type="date" id="Start_Date" name="Start_Date" value="2001-10-02">
+                        </div>
+    
+                        <div class="form-group">
+                            <label for="End_Date">End Date:</label>
+                            <input type="date" id="End_Date" name="End_Date" value="2040-10-02">
+                        </div>
+    
+                        <div class="form-group">
+                            <label for="OnlyMapsContaining">Only Maps Containing:</label>
+                            <input type="text" id="OnlyMapsContaining" name="OnlyMapsContaining" value="dr_">
+                        </div>
+    
+                        <!-- Average‑days dropdown -->
+                        <div class="form-group">
+                            <label for="AverageDays">Average Days:</label>
+                            <select id="AverageDays" name="AverageDays">
+                                <option value="1" selected>1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="7">7</option>
+                                <option value="30">30</option>
+                            </select>
+                        </div>
+    
+                        <!-- Hidden when key invalid -->
+                        <div class="form-group" id="fastWriteGroup" style="display:none;">
+                            <label for="FastWriteDelay">Fast Write Delay&nbsp;(min):</label>
+                            <input type="number" id="FastWriteDelay" name="FastWriteDelay" value="10">
+                        </div>
+                        <div class="form-group" id="runtimeMinutesGroup" style="display:none;">
+                            <label for="RuntimeMinutes">Runtime Minutes:</label>
+                            <input type="number" id="RuntimeMinutes" name="RuntimeMinutes" value="60">
+                        </div>
+    
+                        <div class="form-group">
+                            <label for="ColorIntensity">Color Intensity:</label>
+                            <input type="number" id="ColorIntensity" name="ColorIntensity" value="3">
+                        </div>
+    
+                        <!-- Game dropdown -->
+                        <div class="form-group">
+                            <label for="Game">Game:</label>
+                            <select id="Game" name="Game">
+                                <option value="tf" selected>Team Fortress 2 (tf)</option>
+                                <option value="csgo">Counter‑Strike: Global Offensive (csgo)</option>
+                                <option value="cstrike">Counter‑Strike: Source (cstrike)</option>
+                                <option value="dod">Day of Defeat: Source (dod)</option>
+                                <option value="hl2mp">Half‑Life 2: Deathmatch (hl2mp)</option>
+                                <option value="left4dead2">Left 4 Dead 2 (left4dead2)</option>
+                                <option value="left4dead">Left 4 Dead (left4dead)</option>
+                                <option value="garrysmod">Garry’s Mod (garrysmod)</option>
+                                <option value="insurgency">Insurgency (insurgency)</option>
+                                <option value="synergy">Synergy (synergy)</option>
+                                <option value="alienswarm">Alien Swarm (alienswarm)</option>
+                            </select>
+                        </div>
+                    </form>
                 </section>
             </div>
-
-            <!-- RIGHT: parameters -->
-            <section class="params-section">
-                <h2>Parameters</h2>
-                <form id="paramsForm">
-                    <!-- (unchanged form) -->
-                    <div class="form-group">
-                        <label for="apiKey">API Key:</label>
-                        <input type="text" id="apiKey" name="apiKey" value="">
-                    </div>
-                    <div class="form-group">
-                        <label for="MapsToShow">Maps To Show:</label>
-                        <input type="number" id="MapsToShow" name="MapsToShow" value="15">
-                    </div>
-                    <div class="form-group">
-                        <label for="Start_Date">Start Date:</label>
-                        <input type="date" id="Start_Date" name="Start_Date" value="2001-10-02">
-                    </div>
-                    <div class="form-group">
-                        <label for="End_Date">End Date:</label>
-                        <input type="date" id="End_Date" name="End_Date" value="2040-10-02">
-                    </div>
-                    <div class="form-group">
-                        <label for="OnlyMapsContaining">Only Maps Containing:</label>
-                        <input type="text" id="OnlyMapsContaining" name="OnlyMapsContaining" value="dr_">
-                    </div>
-                    <div class="form-group">
-                        <label for="AverageDays">Average Days:</label>
-                        <input type="number" id="AverageDays" name="AverageDays" value="1">
-                    </div>
-                    <div class="form-group">
-                        <label for="FastWriteDelay">Fast Write Delay&nbsp;(min):</label>
-                        <input type="number" id="FastWriteDelay" name="FastWriteDelay" value="10">
-                    </div>
-                    <div class="form-group">
-                        <label for="RuntimeMinutes">Runtime Minutes:</label>
-                        <input type="number" id="RuntimeMinutes" name="RuntimeMinutes" value="60">
-                    </div>
-                    <div class="form-group">
-                        <label for="ColorIntensity">Color Intensity:</label>
-                        <input type="number" id="ColorIntensity" name="ColorIntensity" value="3">
-                    </div>
-                    <div class="form-group">
-                        <label for="Game">Game:</label>
-                        <input type="text" id="Game" name="Game" value="tf">
-                    </div>
-                </form>
-            </section>
         </div>
-    </div>
 
     <!-- ================= FOOTER ================= -->
     <footer>
@@ -231,6 +271,14 @@
             document.getElementById('startScan').style.display    = valid ? 'inline-block' : 'none';
             document.getElementById('stopScan').style.display     = valid ? 'inline-block' : 'none';
 
+            /* NEW ─ toggle visibility of parameter rows */
+            const fastWrite   = document.getElementById('fastWriteGroup');
+            const runtimeMins = document.getElementById('runtimeMinutesGroup');
+            if (fastWrite && runtimeMins) {
+                fastWrite.style.display   = valid ? 'flex' : 'none';
+                runtimeMins.style.display = valid ? 'flex' : 'none';
+            }
+
             if (valid && !statusInterval) {
                 statusInterval = setInterval(() => refreshStatus().catch(console.error), 1_000);
             } else if (!valid && statusInterval) {
@@ -323,6 +371,7 @@
             checkApiKeyState();
             await checkCSVStatus();
             await refreshStatus();
+            updateChart();
         });
         document.getElementById('refreshChart').addEventListener('click', updateChart);
         document.getElementById('startScan').addEventListener('click',   startScanning);
