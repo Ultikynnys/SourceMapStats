@@ -132,7 +132,7 @@ Runtime configuration is stored in‑memory and can be tweaked on the fly via th
 | `Game` | str | `"tf"` | Short game dir (tf, csgo, etc.). |
 | `MapsToShow` | int | `15` | How many top maps to graph. |
 | `Start_Date` / `End_Date` | `YYYY‑MM‑DD` | wide range | Date window used when aggregating CSV rows. |
-| `AverageDays` | int | `1` | Number of days per bucket for averaging. |
+| `AverageDays(Days Per Point)` | int | `1` | Number of days per bucket for averaging. |
 | `FastWriteDelay` | int (min) | `10` | Idle delay between “fast” scans. |
 | … | | | see the `config` dict in `app.py`. |
 
