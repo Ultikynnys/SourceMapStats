@@ -13,3 +13,5 @@ venv2/
 .vs/
 output.csv
 stats.log
+
+!example_output.csv
