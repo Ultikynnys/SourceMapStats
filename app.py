@@ -821,15 +821,22 @@ def api_data():
 @status_rate_limiter
 def api_status():
     """
-    Returns live scanning status, plus how many seconds remain
-    before the next fast scan can fire.
+    Returns live scanning status, plus:
+      - cooldown_remaining: seconds until next fast scan
+      - ip_scan_timeout: minimum timeout applied per IP lookup
     """
     global next_scan_time
+
     now = time.time()
+    # compute remaining cooldown
     if scanning_mode == "Cooldown" and next_scan_time:
         cooldown_remaining = max(0, int(next_scan_time - now))
     else:
         cooldown_remaining = 0
+
+    # clamp configured timeout to the per‑IP max
+    configured = config.get("servertimeout", config["timeout_query"])
+    effective = min(configured, MAX_SINGLE_IP_TIMEOUT)
 
     return jsonify({
         "scanning_status":    scanning_status,
@@ -838,8 +845,8 @@ def api_status():
         "last_error":         last_error_message,
         "request_count":      g.rate_remaining,
         "refresh_time":       g.rate_reset,
-        "current_ip_timeout": config.get("servertimeout", config["timeout_query"]),
-        "cooldown_remaining": cooldown_remaining
+        "cooldown_remaining": cooldown_remaining,
+        "ip_scan_timeout":    effective
     })
 
 @app.route('/api/csv_status', methods=['GET'])
