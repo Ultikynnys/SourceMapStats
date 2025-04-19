@@ -11,7 +11,7 @@ It periodically queries public game servers, stores per‑map player counts in a
 - [SourceMapStats](#sourcemapstats)
   - [Table of Contents](#tableofcontents)
   - [Why?](#why)
-  - [Live demo](#live-demo)
+  - [Live demo(http://176.57.188.166:5000)](#live-demohttp176571881665000)
   - [Quick start](#quickstart)
   - [Local vs public mode](#localvspublicmode)
     - [How to expose the service](#how-to-expose-the-service)
@@ -27,11 +27,7 @@ The scanner, however, is game‑agnostic—just change the `Game` parameter and 
 
 ---
 
-## Live demo
-
-```
-http://176.57.188.166:5000
-```
+## Live demo(http://176.57.188.166:5000)
 
 > **Note:** By default the server binds **only to localhost** for safety.  
 > If you enable public mode (see below) you can replace `127.0.0.1` with your machine’s LAN or public IP.
