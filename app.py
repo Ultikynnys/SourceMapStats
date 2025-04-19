@@ -22,6 +22,14 @@ sys.path.insert(0, os.path.join(dirname, "a2s"))
 import a2s
 from pythonvalve.valve.source import master_server
 
+
+################################################
+# --------------[ Bind Mode Toggle ]-----------#
+################################################
+# False ⟹ SAFE default; app is only reachable on localhost.
+# True  ⟹ Bind to 0.0.0.0 (all interfaces) so the service is public.
+PUBLIC_MODE: bool = False
+
 ################################################
 # --------------[ Flask Setup ]----------------#
 ################################################
@@ -713,5 +721,18 @@ def sanitize_basic_string(value, allow_spaces=False):
     pattern = r'[^a-zA-Z0-9_\-, ]' if allow_spaces else r'[^a-zA-Z0-9_\-]'
     return re.sub(pattern, '', value)
 
+################################################
+# --------- [ Main entry ‑ Waitress bind ] ----#
+################################################
 if __name__ == "__main__":
-    serve(app, host="127.0.0.1", port=5000)
+    # Decide where to bind based on PUBLIC_MODE
+    DEFAULT_HOST = "0.0.0.0" if PUBLIC_MODE else "127.0.0.1"
+    DEFAULT_PORT = int(os.getenv("PORT", 5000))  # honour PORT env if set
+
+    # Extra threads can improve throughput on many‑core machines; tweak if needed
+    serve(
+        app,
+        host=DEFAULT_HOST,
+        port=DEFAULT_PORT,
+        threads=8
+    )
