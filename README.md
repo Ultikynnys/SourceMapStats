@@ -11,11 +11,13 @@ It periodically queries public game servers, stores per‑map player counts in a
 - [SourceMapStats](#sourcemapstats)
   - [Table of Contents](#tableofcontents)
   - [Why?](#why)
-  - [Live demo(http://176.57.188.166:5000)](#live-demohttp176571881665000)
+  - [Live Demo](#live-demo)
   - [Quick start](#quickstart)
+    - [4. (Optional) Set up as a system service](#4-optional-set-up-as-a-system-service)
   - [Local vs public mode](#localvspublicmode)
     - [How to expose the service](#how-to-expose-the-service)
   - [Configuration](#configuration)
+  - [Security Recommendations](#security-recommendations)
   - [REST API](#restapi)
 
 ---
@@ -27,7 +29,9 @@ The scanner, however, is game‑agnostic—just change the `Game` parameter and 
 
 ---
 
-## Live demo(http://176.57.188.166:5000)
+## Live Demo
+
+Visit the [live demo](https://sourcemapstats-demo.example.com) to see SourceMapStats in action.
 
 > **Note:** By default the server binds **only to localhost** for safety.  
 > If you enable public mode (see below) you can replace `127.0.0.1` with your machine’s LAN or public IP.
@@ -84,6 +88,17 @@ Open `http://localhost:5000` (same machine) or `http://<server‑ip>:5000` if yo
 
 > **Tip:** Let the crawler run continuously for **at least one month** to gather enough samples for reliable map‑popularity trends. Shorter runs can be skewed by daily fluctuations and special events.
 
+### 4. (Optional) Set up as a system service
+
+To run SourceMapStats as a background service:
+
+```bash
+sudo cp sourcemapstats.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable sourcemapstats
+sudo systemctl start sourcemapstats
+```
+
 ---
 
 ## Local vs public mode
@@ -132,11 +147,24 @@ Runtime configuration is stored in‑memory and can be tweaked on the fly via th
 | `Game` | str | `"tf"` | Short game dir (tf, csgo, etc.). |
 | `MapsToShow` | int | `15` | How many top maps to graph. |
 | `Start_Date` / `End_Date` | `YYYY‑MM‑DD` | wide range | Date window used when aggregating CSV rows. |
-| `AverageDays(Days Per Point)` | int | `1` | Number of days per bucket for averaging. |
+| `AverageDays` | int | `1` | Number of days per bucket for averaging. |
 | `FastWriteDelay` | int (min) | `10` | Idle delay between “fast” scans. |
-| … | | | see the `config` dict in `app.py`. |
+| `SlowWriteDelay` | int | `30` | Minutes between "slow" scans. |
+| `FastModeThreshold` | int | `1000` | Switch to fast mode above this player count. |
+| `ScanTimeout` | int | `5` | Seconds before query timeout. |
+| `BatchSize` | int | `50` | Servers to query in parallel. |
 
-Changes persist **until the process restarts** (no disk write yet).
+Changes persist **until the process restarts**. Consider using environment variables for permanent changes.
+
+---
+
+## Security Recommendations
+
+1. Always change the default API key before first run
+2. Use a strong firewall configuration if exposing publicly
+3. Consider putting the service behind a reverse proxy
+4. Monitor the `/api/connections` endpoint for abuse
+5. Rate limit aggressive IPs at your network level
 
 ---
 
