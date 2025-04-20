@@ -375,30 +375,92 @@
         async function fetchData() { return doFetch('/api/data'); }
 
         function renderChart(data) {
-            const ctx = document.getElementById('chartCanvas').getContext('2d');
-            const chartData = { labels: data.labels, datasets: data.datasets, totalPlayers: data.totalPlayers };
+    const ctx = document.getElementById('chartCanvas').getContext('2d');
 
-            if (window.myChart) window.myChart.destroy();
-            window.myChart = new Chart(ctx, {
-                type: 'line',
-                data: chartData,
-                options: {
-                    responsive: false,
-                    plugins: {
-                        title:   { display: true, text: `Top ${data.shownMapsCount} Maps out of ${data.totalFilteredMaps}`, color: 'white' },
-                        legend:  { labels: { color: 'white' } },
-                        tooltip: { mode: 'index', intersect: false }
-                    },
-                    scales: {
-                        x: { beginAtZero: true, ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } },
-                        y: { beginAtZero: true, ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } }
-                    }
+    // 1) Compute rawTotals[idx] = sum of counts across the shown maps at each index
+    const rawTotals = data.datasets[0].data.map((_, idx) =>
+        data.datasets.reduce((sum, ds) => sum + ds.data[idx], 0)
+    );
+
+    // 2) Compute average daily player count over those shown maps
+    const avgDailyCount = rawTotals.reduce((sum, v) => sum + v, 0) / rawTotals.length;
+
+    // 3) Build datasets of percentages (each map ÷ rawTotals)
+    const percentDatasets = data.datasets.map(ds => ({
+        label:           ds.label,
+        data:            ds.data.map((count, idx) =>
+                            rawTotals[idx] ? (count / rawTotals[idx]) * 100 : 0
+                         ),
+        borderColor:     ds.borderColor,
+        backgroundColor: ds.backgroundColor,
+        fill:            ds.fill
+    }));
+
+    // 4) Destroy previous chart if it exists
+    if (window.myChart) {
+        window.myChart.destroy();
+    }
+
+    // 5) Create the new percentage chart with sorted tooltip items
+    window.myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels:   data.labels,
+            datasets: percentDatasets
+        },
+        options: {
+            responsive: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: `Top ${data.shownMapsCount} Maps as % of Shown Total`,
+                    color: 'white'
                 },
-                plugins: [ totalPlayerPlugin ]
-            });
-            document.getElementById('playerCountDisplay').textContent =
-                `Average Daily Player Count: ${data.averageDailyPlayerCount}`;
+                legend: {
+                    labels: { color: 'white' }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    // sort by descending %, but keep "Other Maps" at the bottom
+                    itemSort: (a, b) => {
+                        const isOtherA = a.dataset.label === 'Other Maps';
+                        const isOtherB = b.dataset.label === 'Other Maps';
+                        if (isOtherA && !isOtherB) return 1;
+                        if (!isOtherA && isOtherB) return -1;
+                        return b.parsed.y - a.parsed.y;
+                    },
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: { color: 'white' },
+                    grid:  { color: 'rgba(255,255,255,0.2)' }
+                },
+                y: {
+                    beginAtZero: true,
+                    max:         100,
+                    ticks: {
+                        color:    'white',
+                        callback: v => v + '%'
+                    },
+                    grid: { color: 'rgba(255,255,255,0.2)' }
+                }
+            }
         }
+    });
+
+    // 6) Read the current filter string from the form
+    const filter = document.getElementById('OnlyMapsContaining').value;
+
+    // 7) Update only the text below the chart with a clearer label
+    document.getElementById('playerCountDisplay').textContent =
+        `Average player count for maps containing "${filter}": ${avgDailyCount.toFixed(1)}`;
+}
 
         const updateChart = createThrottledFunction(async () => {
             /* Push current form values to API */
