@@ -31,7 +31,7 @@ The scanner, however, is game‑agnostic—just change the `Game` parameter and 
 
 ## Live Demo
 
-Visit the [live demo](https://sourcemapstats-demo.example.com) to see SourceMapStats in action.
+Visit the [live demo](http://176.57.188.166:5000/) to see SourceMapStats in action.
 
 > **Note:** By default the server binds **only to localhost** for safety.  
 > If you enable public mode (see below) you can replace `127.0.0.1` with your machine’s LAN or public IP.
