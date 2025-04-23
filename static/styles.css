@@ -1,3 +1,5 @@
+/* styles.css */
+
 /* =====================================================
    GLOBAL
    ===================================================== */
@@ -9,7 +11,7 @@
     color: #e0e0e0;
 }
 
-/* Screen‑reader‑only utility */
+/* Screen-reader-only utility */
 .sr-only {
     position: absolute;
     width: 1px;
@@ -27,7 +29,7 @@
    ===================================================== */
 .container {
     width: 90%;
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 40px auto;
     padding: 20px;
     background: #1e1e1e;
@@ -42,17 +44,84 @@ header h1 {
     color: #f39c12;
 }
 
-/* Chart box */
+/* =====================================================
+   THREE-COLUMN layout for ranking / chart+status / params
+   ===================================================== */
+.chart-params-container {
+    display: grid;
+    grid-template-columns: minmax(250px, 1fr) minmax(800px, 2fr) minmax(200px, 3fr);
+    gap: 20px;
+    align-items: start;
+}
+
+/* allow the left & right panels to shrink */
+.chart-params-container > .ranking-section,
+.chart-params-container > .params-section {
+    min-width: 0;
+}
+
+/* keep the middle (chart) column at least as wide as the canvas */
+.chart-params-container > .chart-status-section {
+    min-width: 800px;
+}
+
+/* =====================================================
+   Ranking section
+   ===================================================== */
+.ranking-section {
+    background: rgba(0,0,0,0.3);
+    padding: 1em;
+    border-radius: 4px;
+    color: white;
+}
+.ranking-section h2 {
+    margin-top: 0;
+}
+.ranking-section ol {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .ranking-section li {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.5em;
+  }
+  .ranking-section .rank-pct {
+    margin-left: auto;
+    font-size: 0.9em;
+    color: #ccc;
+  }
+
+/* Chart + status section container */
+.chart-status-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1em;
+}
+
+/* =====================================================
+   Chart box
+   ===================================================== */
 .chart-box {
     background: #333;
     padding: 20px;
     border-radius: 8px;
     text-align: center;
 }
-#playerCountDisplay { margin-top: 10px; font-size: 18px; }
+#playerCountDisplay {
+    margin-top: 10px;
+    font-size: 18px;
+}
 
-/* Buttons */
-.btn-group { display: inline-flex; gap: 10px; margin-bottom: 15px; }
+/* =====================================================
+   Buttons
+   ===================================================== */
+.btn-group {
+    display: inline-flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
 .btn {
     padding: 10px 20px;
     background-color: #f39c12;
@@ -63,19 +132,31 @@ header h1 {
     font-size: 16px;
     transition: background-color .3s ease;
 }
-.btn:hover { background-color: #d35400; }
+.btn:hover {
+    background-color: #d35400;
+}
 
-/* Status panel */
+/* =====================================================
+   Status panel
+   ===================================================== */
 .status-section {
     background: #333;
     padding: 20px;
     border-radius: 8px;
     text-align: center;
 }
-.status-section h2 { color: #f39c12; margin-bottom: 15px; }
-.status-section p  { margin: 5px 0; font-size: 16px; }
+.status-section h2 {
+    color: #f39c12;
+    margin-bottom: 15px;
+}
+.status-section p {
+    margin: 5px 0;
+    font-size: 16px;
+}
 
-/* Parameters panel */
+/* =====================================================
+   Parameters panel
+   ===================================================== */
 .params-section {
     background: #2c2c2c;
     padding: 20px;
@@ -83,14 +164,32 @@ header h1 {
     display: flex;
     flex-direction: column;
 }
-.params-section h2 { text-align: center; margin-bottom: 20px; color: #f39c12; }
+.params-section h2 {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #f39c12;
+}
 
-.form-group          { display: flex; flex-wrap: wrap; align-items: center; margin-bottom: 15px; }
-.form-group label    { flex: 1 1 200px; margin-right: 10px; text-align: right; }
+.form-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 15px;
+}
+.form-group label {
+    flex: 1 1 200px;
+    margin-right: 10px;
+    text-align: right;
+}
+
+/* allow labels and inputs to shrink inside their flex container */
+.form-group > * {
+    min-width: 0;
+}
 
 /* Common look for input & select */
 .form-group input,
-.form-group select   {
+.form-group select {
     flex: 2 1 300px;
     padding: 8px;
     border: 1px solid #444;
@@ -99,19 +198,23 @@ header h1 {
     color: #e0e0e0;
 }
 
-/* Small‑screen tweaks */
-@media (max-width: 600px) {
-    .form-group        { flex-direction: column; align-items: flex-start; }
-    .form-group label  { text-align: left; margin-bottom: 5px; }
+/* Hide fast write and runtime groups by default */
+#fastWriteGroup,
+#runtimeMinutesGroup {
+    display: none;
 }
 
-/* =====================================================
-   TWO‑COLUMN layout (chart/status  vs.  parameters)
-   ===================================================== */
-.chart-params-container { display: flex; align-items: stretch; gap: 20px; }
-.left-column            { display: flex; flex-direction: column; gap: 20px; flex: 2; }
-.params-section         { flex: 1; max-width: 300px; }
-.params-section > form  { flex: 1; overflow-y: auto; }
+/* Small-screen tweaks */
+@media (max-width: 600px) {
+    .form-group {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .form-group label {
+        text-align: left;
+        margin-bottom: 5px;
+    }
+}
 
 /* =====================================================
    FOOTER
@@ -132,17 +235,23 @@ footer {
     gap: 10px;
     text-align: center;
 }
-.description { font-size: 14px; line-height: 1.5; max-width: 900px; }
-.copyright   { font-size: 14px; opacity: .8; }
+.description {
+    font-size: 14px;
+    line-height: 1.5;
+    max-width: 900px;
+}
+.copyright {
+    font-size: 14px;
+    opacity: .8;
+}
 
 /* =====================================================
-   GITHUB CORNER (top‑right “notch”)
+   GITHUB CORNER (top-right “notch”)
    ===================================================== */
 .github-corner svg {
     position: fixed;
     top: 0;
     right: 0;
-    border: 0;
     z-index: 1000;
     width: 100px;
     height: 100px;
@@ -150,17 +259,20 @@ footer {
     color: #ffffff;      /* octocat */
     transition: transform .3s ease;
 }
-.github-corner:hover svg { transform: scale(1.1); }
-
-/* Octocat arm wave */
-.github-corner .octo-arm { transform-origin: 130px 106px; }
-.github-corner:hover .octo-arm { animation: octo-wave 560ms ease-in-out; }
+.github-corner:hover svg {
+    transform: scale(1.1);
+}
+.github-corner .octo-arm {
+    transform-origin: 130px 106px;
+}
+.github-corner:hover .octo-arm {
+    animation: octo-wave 560ms ease-in-out;
+}
 @keyframes octo-wave {
     0%,100% { transform: rotate(0deg); }
     20%,60% { transform: rotate(-25deg); }
     40%,80% { transform: rotate(10deg); }
 }
-/* Disable animation on small screens */
 @media (max-width: 500px) {
     .github-corner:hover .octo-arm { animation: none; }
     .github-corner .octo-arm       { animation: octo-wave 560ms ease-in-out; }
