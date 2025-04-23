@@ -1,399 +1,444 @@
-<!-- index.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Map Stats Visualization</title>
+  <meta charset="UTF-8">
+  <title>Source Map Stats Visualization</title>
 
-    <!-- Styles -->
-    <link rel="stylesheet" href="/static/styles.css">
+  <!-- Main stylesheet -->
+  <link rel="stylesheet" href="/static/styles.css">
 
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Octocat loader -->
-    <script src="/static/octocat-loader.js"></script>
+  <!-- Inline CSS to fix chart sizing and error display -->
+  <style>
+    .chart-box {
+      overflow-x: auto;
+      position: relative;
+    }
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 400px;
+      margin: 0 auto;
+    }
+    .chart-container canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+    #dataErrors p {
+      margin: 0;
+      color: #e74c3c;
+      font-weight: bold;
+    }
+  </style>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Optional Octocat loader -->
+  <script src="/static/octocat-loader.js"></script>
 </head>
 <body>
+  <div class="container">
+    <header>
+      <h1>Source Map Stats Visualization</h1>
+    </header>
 
-    <div class="container">
-        <header>
-            <h1>Map Stats Visualization</h1>
-        </header>
+    <div class="chart-params-container">
 
-        <div class="chart-params-container">
-            <!-- LEFT: ranking -->
-            <section class="ranking-section">
-                <h2>Ranking</h2>
-                <ol id="mapRanking"></ol>
-            </section>
+      <!-- LEFT — Ranking list -->
+      <section class="ranking-section">
+        <h2>Ranking</h2>
+        <ol id="mapRanking"></ol>
+      </section>
 
-            <!-- MIDDLE: chart + status -->
-            <div class="chart-status-section">
-                <section class="chart-box">
-                    <canvas id="chartCanvas" width="800" height="400"></canvas>
-                    <p id="playerCountDisplay"></p>
-                    <button id="refreshChart" class="btn">Refresh Chart</button>
-                </section>
+      <!-- MIDDLE — Charts + Status -->
+      <div class="chart-status-section">
 
-                <section class="status-section">
-                    <h2>Status</h2>
-                    <div class="btn-group">
-                        <button id="startScan" class="btn">Start Scanning</button>
-                        <button id="stopScan"  class="btn">Stop Scanning</button>
-                    </div>
-                    <p id="scanningStatus">Scanning Status: Idle</p>
-                    <p id="scanningMode">Scanning Mode: None</p>
-                    <p id="cooldownRemaining">Cooldown Remaining: — s</p>
-                    <p id="currentIP">Current IP: None</p>
-                    <p id="lastError">Last Error: None</p>
-                    <p id="requestsLeft">Requests Left: —</p>
-                    <p id="ratelimitReset">Rate-limit Reset In: — s</p>
-                    <p id="ipTimeout">IP-Scan Timeout: — s</p>
-                    <p id="apiKeyState">API Key State: Unknown</p>
-                    <p id="connectionStatus" class="disconnected">No server found</p>
-                    <button id="refreshStatus" class="btn">Refresh Status</button>
-                </section>
-            </div>
+        <!-- Chart box -->
+        <section class="chart-box">
 
-            <!-- RIGHT: parameters -->
-            <section class="params-section">
-                <h2>Parameters</h2>
-                <form id="paramsForm">
-                    <div class="form-group">
-                        <label for="apiKey">API Key:</label>
-                        <input type="text" id="apiKey" name="apiKey" value="">
-                    </div>
-                    <div class="form-group">
-                        <label for="MapsToShow">Maps To Show:</label>
-                        <select id="MapsToShow" name="MapsToShow">
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
-                            <option value="6">6</option>
-                            <option value="7">7</option>
-                            <option value="8">8</option>
-                            <option value="9">9</option>
-                            <option value="10" selected>10</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="Start_Date">Start Date:</label>
-                        <input type="date" id="Start_Date" name="Start_Date" value="2001-10-02">
-                    </div>
-                    <div class="form-group">
-                        <label for="End_Date">End Date:</label>
-                        <input type="date" id="End_Date" name="End_Date" value="2040-10-02">
-                    </div>
-                    <div class="form-group">
-                        <label for="OnlyMapsContaining">Only Maps Containing:</label>
-                        <input type="text" id="OnlyMapsContaining" name="OnlyMapsContaining" value="dr_">
-                    </div>
-                    <div class="form-group">
-                        <label for="AverageDays">Days Per Point:</label>
-                        <select id="AverageDays" name="AverageDays">
-                            <option value="1" selected>1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="7">7</option>
-                            <option value="30">30</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="fastWriteGroup">
-                        <label for="FastWriteDelay">Fast Write Delay (min):</label>
-                        <input type="number" id="FastWriteDelay" name="FastWriteDelay" value="10">
-                    </div>
-                    <div class="form-group" id="runtimeMinutesGroup">
-                        <label for="RuntimeMinutes">Runtime Minutes:</label>
-                        <input type="number" id="RuntimeMinutes" name="RuntimeMinutes" value="60">
-                    </div>
-                    <div class="form-group">
-                        <label for="ColorIntensity">Color Intensity:</label>
-                        <input type="number" id="ColorIntensity" name="ColorIntensity" value="3">
-                    </div>
-                    <div class="form-group">
-                        <label for="Game">Game:</label>
-                        <select id="Game" name="Game">
-                            <option value="tf" selected>Team Fortress 2 (tf)</option>
-                            <option value="csgo">Counter-Strike: Global Offensive (csgo)</option>
-                            <option value="cstrike">Counter-Strike: Source (cstrike)</option>
-                            <option value="dod">Day of Defeat: Source (dod)</option>
-                            <option value="hl2mp">Half-Life 2: Deathmatch (hl2mp)</option>
-                            <option value="left4dead2">Left 4 Dead 2 (left4dead2)</option>
-                            <option value="left4dead">Left 4 Dead (left4dead)</option>
-                            <option value="garrysmod">Garry’s Mod (garrysmod)</option>
-                            <option value="insurgency">Insurgency (insurgency)</option>
-                            <option value="synergy">Synergy (synergy)</option>
-                            <option value="alienswarm">Alien Swarm (alienswarm)</option>
-                        </select>
-                    </div>
-                </form>
-            </section>
-        </div>
+          <!-- Sanity check output -->
+          <div id="dataErrors"></div>
+
+          <!-- Main share-of-day chart -->
+          <div class="chart-container">
+            <canvas id="chartCanvas"></canvas>
+          </div>
+
+          <!-- Daily Avg Players chart -->
+          <div class="chart-container" style="margin-top:12px">
+            <canvas id="avgChartCanvas"></canvas>
+          </div>
+
+          <!-- Snapshots-per-day chart -->
+          <div class="chart-container" style="margin-top:12px">
+            <canvas id="snapshotChartCanvas"></canvas>
+          </div>
+
+          <!-- Text + Refresh -->
+          <p id="playerCountDisplay"></p>
+          <button id="refreshChart" class="btn">Refresh Chart</button>
+        </section>
+
+        <!-- Status / Scan Controls -->
+        <section class="status-section">
+          <h2>Status</h2>
+          <div class="btn-group">
+            <button id="startScan" class="btn">Start Scanning</button>
+            <button id="stopScan"  class="btn">Stop Scanning</button>
+          </div>
+          <p id="scanningStatus">Scanning Status: Idle</p>
+          <p id="scanningMode">Scanning Mode: None</p>
+          <p id="currentIP">Current IP: None</p>
+          <p id="cooldownRemaining">Cooldown Remaining: — s</p>
+          <p id="lastError">Last Error: None</p>
+          <p id="requestsLeft">Requests Left: —</p>
+          <p id="ratelimitReset">Rate-limit Reset In: — s</p>
+          <p id="ipTimeout">IP-Scan Timeout: — s</p>
+          <p id="apiKeyState">API Key State: Unknown</p>
+          <p id="connectionStatus" class="disconnected">No server found</p>
+          <button id="refreshStatus" class="btn">Refresh Status</button>
+        </section>
+
+      </div>
+
+      <!-- RIGHT — Runtime Parameters -->
+      <section class="params-section">
+        <h2>Parameters</h2>
+        <form id="paramsForm">
+          <div class="form-group">
+            <label for="apiKey">API Key</label>
+            <input type="text" id="apiKey" name="apiKey" value="">
+          </div>
+          <div class="form-group">
+            <label for="MapsToShow">Maps To Show</label>
+            <select id="MapsToShow" name="MapsToShow">
+              <option>1</option><option>2</option><option>3</option>
+              <option>4</option><option>5</option><option>6</option>
+              <option>7</option><option>8</option><option>9</option>
+              <option selected>10</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="Start_Date">Start Date</label>
+            <input type="date" id="Start_Date" name="Start_Date" value="2001-10-02">
+          </div>
+          <div class="form-group">
+            <label for="End_Date">End Date</label>
+            <input type="date" id="End_Date" name="End_Date" value="2040-10-02">
+          </div>
+          <div class="form-group">
+            <label for="OnlyMapsContaining">Only Maps Containing</label>
+            <input type="text" id="OnlyMapsContaining" name="OnlyMapsContaining" value="dr_">
+          </div>
+          <div class="form-group" id="fastWriteGroup">
+            <label for="FastWriteDelay">Fast Write Delay (min)</label>
+            <input type="number" id="FastWriteDelay" name="FastWriteDelay" value="10">
+          </div>
+          <div class="form-group" id="runtimeMinutesGroup">
+            <label for="RuntimeMinutes">Runtime Minutes</label>
+            <input type="number" id="RuntimeMinutes" name="RuntimeMinutes" value="60">
+          </div>
+          <div class="form-group">
+            <label for="ColorIntensity">Color Intensity</label>
+            <input type="number" id="ColorIntensity" name="ColorIntensity" value="3">
+          </div>
+          <div class="form-group">
+            <label for="Game">Game</label>
+            <select id="Game" name="Game">
+              <option value="tf" selected>Team Fortress 2</option>
+              <option value="csgo">CS:GO</option>
+              <option value="cstrike">CS:S</option>
+              <option value="dod">DoD Source</option>
+              <option value="hl2mp">HL2:DM</option>
+              <option value="left4dead2">L4D2</option>
+              <option value="left4dead">L4D</option>
+              <option value="garrysmod">Garry’s Mod</option>
+              <option value="insurgency">Insurgency</option>
+              <option value="synergy">Synergy</option>
+              <option value="alienswarm">Alien Swarm</option>
+            </select>
+          </div>
+        </form>
+      </section>
+
     </div>
+  </div>
 
-    <footer>
-        <div class="footer-content">
-            <p class="description">
-                <strong>SourceMapStats</strong> is a map-statistics tool that queries the Source Master Server,
-                gathers player frequency per map, and renders that data as an interactive chart.
-            </p>
-            <p class="copyright">&copy; Ultikynnys 2025</p>
-        </div>
-    </footer>
+  <footer>
+    <div class="footer-content">
+      <p class="description">
+        <strong>SourceMapStats</strong> — queries the Steam Master Server,
+        aggregates player counts per map, and renders the results.
+      </p>
+      <p class="copyright">© Ultikynnys 2025</p>
+    </div>
+  </footer>
 
-    <script>
-        /* Helpers & throttling */
-        function createThrottledFunction(fn, delay) {
-            let lastCall = 0;
-            return (...args) => {
-                const now = Date.now();
-                if (now - lastCall >= delay) {
-                    lastCall = now;
-                    fn(...args);
-                }
-            };
+  <script>
+    /* Helper utilities */
+    function createThrottledFunction(fn, delay) {
+      let last = 0;
+      return (...args) => {
+        const now = Date.now();
+        if (now - last >= delay) {
+          last = now;
+          fn(...args);
         }
-        function setAllButtonsDisabled(disabled) {
-            document.querySelectorAll("button").forEach(btn => btn.disabled = disabled);
-        }
+      };
+    }
+    function setAllButtonsDisabled(disabled) {
+      document.querySelectorAll("button").forEach(btn => btn.disabled = disabled);
+    }
+    function sanitizeApiKey(key) {
+      return key.replace(/[^a-zA-Z0-9-_]/g,'');
+    }
+    function hasValidApiKey(key) {
+      return key && key.length >= 10;
+    }
 
-        /* Sanitizers & rules */
-        function sanitizeApiKey(key) { return key.replace(/[^a-zA-Z0-9-_]/g, ''); }
-        function hasValidApiKey(key) { return key && key.length >= 10; }
+    /* Fetch wrapper */
+    async function doFetch(url, options = {}) {
+      options.headers = options.headers || {};
+      const rawKey = document.getElementById('apiKey').value || '';
+      const key = sanitizeApiKey(rawKey);
+      if (hasValidApiKey(key)) options.headers['X-API-KEY'] = key;
 
-        /* Fetch wrapper */
-        async function doFetch(url, options = {}) {
-            options.headers = options.headers || {};
-            const rawKey = document.getElementById('apiKey')?.value || '';
-            const key = sanitizeApiKey(rawKey);
-            if (hasValidApiKey(key)) options.headers['X-API-KEY'] = key;
-            const response = await fetch(url, options);
-            if (response.status === 429) {
-                const data = await response.json().catch(() => ({}));
-                const cooldown = 1;
-                alert(`Rate Limited: ${data.error || 'Too many requests'}. Cool-down: ${cooldown}s`);
-                setAllButtonsDisabled(true);
-                setTimeout(() => setAllButtonsDisabled(false), cooldown * 1000);
-                throw new Error('Rate Limit');
-            }
-            if (response.status === 401) {
-                document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
-                throw new Error('Unauthorized');
-            }
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                const msg = data.error || `HTTP Error ${response.status}`;
-                alert(msg);
-                throw new Error(msg);
-            }
-            return response.json();
-        }
+      const res = await fetch(url, options);
+      if (res.status === 429) {
+        const d = await res.json().catch(() => ({}));
+        const cd = d.cooldown || 1;
+        alert(`Rate limited — cool-down ${cd}s`);
+        setAllButtonsDisabled(true);
+        setTimeout(() => setAllButtonsDisabled(false), cd * 1000);
+        throw new Error('Rate limited');
+      }
+      if (res.status === 401) {
+        document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
+        throw new Error('Unauthorized');
+      }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || `HTTP ${res.status}`);
+        throw new Error('HTTP error');
+      }
+      return res.json();
+    }
 
-        /* Key validation & status */
-        let statusInterval = null;
-        async function validateApiKey(key) {
-            if (!hasValidApiKey(key)) return false;
-            try {
-                const res = await fetch('/api/validate_key', {
-                    cache: 'no-store',
-                    headers: { 'X-API-KEY': key }
-                });
-                return res.ok;
-            } catch {
-                return false;
-            }
-        }
-        function toggleExtraParams(show) {
-            document.getElementById('fastWriteGroup').style.display = show ? 'flex' : 'none';
-            document.getElementById('runtimeMinutesGroup').style.display = show ? 'flex' : 'none';
-        }
-        async function checkApiKeyState() {
-            const elem = document.getElementById('apiKey');
-            const raw = elem.value;
-            const key = sanitizeApiKey(raw);
-            if (raw !== key) elem.value = key;
-            if (!hasValidApiKey(key)) {
-                document.getElementById('apiKeyState').textContent = 'API Key State: Not supplied — chart-only mode';
-                document.getElementById('startScan').style.display = 'none';
-                document.getElementById('stopScan').style.display = 'none';
-                toggleExtraParams(false);
-                if (statusInterval) { clearInterval(statusInterval); statusInterval = null; }
-                return;
-            }
-            const valid = await validateApiKey(key);
-            if (!valid) {
-                document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
-                document.getElementById('startScan').style.display = 'none';
-                document.getElementById('stopScan').style.display = 'none';
-                toggleExtraParams(false);
-                if (statusInterval) { clearInterval(statusInterval); statusInterval = null; }
-                return;
-            }
-            document.getElementById('apiKeyState').textContent = 'API Key State: Valid';
-            document.getElementById('startScan').style.display = 'inline-block';
-            document.getElementById('stopScan').style.display = 'inline-block';
-            toggleExtraParams(true);
-            if (!statusInterval) {
-                statusInterval = setInterval(() => refreshStatus().catch(console.error), 1000);
-            }
-        }
+    /* API-key UI */
+    let statusInterval = null;
+    async function validateApiKey(key) {
+      if (!hasValidApiKey(key)) return false;
+      try {
+        const res = await fetch('/api/validate_key', { cache: 'no-store', headers: { 'X-API-KEY': key } });
+        return res.ok;
+      } catch { return false; }
+    }
+    function toggleExtraParams(show) {
+      document.getElementById('fastWriteGroup').style.display = show ? 'flex' : 'none';
+      document.getElementById('runtimeMinutesGroup').style.display = show ? 'flex' : 'none';
+    }
+    async function checkApiKeyState() {
+      const elem = document.getElementById('apiKey');
+      const raw = elem.value;
+      const key = sanitizeApiKey(raw);
+      if (raw !== key) elem.value = key;
+      if (!hasValidApiKey(key)) {
+        document.getElementById('apiKeyState').textContent =
+          'API Key State: Not supplied — chart-only mode';
+        document.getElementById('startScan').style.display = 'none';
+        document.getElementById('stopScan').style.display = 'none';
+        toggleExtraParams(false);
+        if (statusInterval) clearInterval(statusInterval), statusInterval = null;
+        return;
+      }
+      const valid = await validateApiKey(key);
+      if (!valid) {
+        document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
+        document.getElementById('startScan').style.display = 'none';
+        document.getElementById('stopScan').style.display = 'none';
+        toggleExtraParams(false);
+        if (statusInterval) clearInterval(statusInterval), statusInterval = null;
+        return;
+      }
+      document.getElementById('apiKeyState').textContent = 'API Key State: Valid';
+      document.getElementById('startScan').style.display = 'inline-block';
+      document.getElementById('stopScan').style.display = 'inline-block';
+      toggleExtraParams(true);
+      if (!statusInterval) {
+        statusInterval = setInterval(() => refreshStatus().catch(() => {}), 1000);
+      }
+    }
 
-        /* Connection heartbeat */
-        async function updateConnectionStatus() {
-            const el = document.getElementById('connectionStatus');
-            try {
-                const data = await fetch('/api/heartbeat', { cache: 'no-store' })
-                    .then(res => { if (!res.ok) throw ''; return res.json(); });
-                el.textContent = 'Connected';
-                el.classList.remove('disconnected');
-                el.classList.add('connected');
-                document.getElementById('requestsLeft').textContent =
-                    `Requests Left: ${data.requests_left}`;
-                document.getElementById('ratelimitReset').textContent =
-                    `Rate-limit Reset In: ${data.ratelimit_reset}s`;
-            } catch {
-                el.textContent = 'No server found';
-                el.classList.remove('connected');
-                el.classList.add('disconnected');
-            }
-        }
-        setInterval(updateConnectionStatus, 5000);
+    /* Connection heartbeat */
+    async function updateConnectionStatus() {
+      const el = document.getElementById('connectionStatus');
+      try {
+        const d = await fetch('/api/heartbeat', { cache: 'no-store' })
+          .then(r => { if (!r.ok) throw ''; return r.json(); });
+        el.textContent = 'Connected';
+        el.classList.replace('disconnected', 'connected');
+        document.getElementById('requestsLeft').textContent = `Requests Left: ${d.requests_left}`;
+        document.getElementById('ratelimitReset').textContent = `Rate-limit Reset In: ${d.ratelimit_reset}s`;
+      } catch {
+        el.textContent = 'No server found';
+        el.classList.replace('connected', 'disconnected');
+      }
+    }
+    setInterval(updateConnectionStatus, 5000);
 
-        /* CSV status */
-        async function checkCSVStatus() {
-            try {
-                const data = await doFetch('/api/csv_status');
-                document.getElementById('refreshChart').disabled = !(data.exists && !data.empty);
-            } catch {}
-        }
+    /* CSV status */
+    async function checkCSVStatus() {
+      try {
+        const d = await doFetch('/api/csv_status');
+        document.getElementById('refreshChart').disabled = !(d.exists && !d.empty);
+      } catch {}
+    }
 
-        /* Scan controls */
-        async function startScanning() {
-            const key = sanitizeApiKey(document.getElementById('apiKey').value);
-            if (!hasValidApiKey(key)) { alert('API key must be at least 10 characters.'); return; }
-            try {
-                const res = await doFetch('/api/start_scan', { method:'POST' });
-                alert(res.status || res.error);
-            } catch {}
-        }
-        async function stopScanning() {
-            const key = sanitizeApiKey(document.getElementById('apiKey').value);
-            if (!hasValidApiKey(key)) { alert('API key must be at least 10 characters.'); return; }
-            try {
-                const res = await doFetch('/api/stop_scan', { method:'POST' });
-                alert(res.status || res.error);
-            } catch {}
-        }
+    /* Scan controls */
+    async function startScanning() {
+      const key = sanitizeApiKey(document.getElementById('apiKey').value);
+      if (!hasValidApiKey(key)) { alert('API key must be at least 10 characters.'); return; }
+      try {
+        const res = await doFetch('/api/start_scan', { method: 'POST' });
+        alert(res.status || res.error);
+      } catch {}
+    }
+    async function stopScanning() {
+      const key = sanitizeApiKey(document.getElementById('apiKey').value);
+      if (!hasValidApiKey(key)) { alert('API key must be at least 10 characters.'); return; }
+      try {
+        const res = await doFetch('/api/stop_scan', { method: 'POST' });
+        alert(res.status || res.error);
+      } catch {}
+    }
 
-        /* Status refresh */
-        async function refreshStatus() {
-            try {
-                const s = await doFetch('/api/status');
-                document.getElementById('scanningStatus').textContent =
-                  `Scanning Status: ${s.scanning_status}`;
-                document.getElementById('scanningMode').textContent =
-                  `Scanning Mode: ${s.scanning_mode}`;
-                document.getElementById('currentIP').textContent =
-                  `Current IP: ${s.current_scanned_ip || 'None'}`;
-                document.getElementById('lastError').textContent =
-                  `Last Error: ${s.last_error || 'None'}`;
-                document.getElementById('cooldownRemaining').textContent =
-                  `Cooldown Remaining: ${s.cooldown_remaining}s`;
-                document.getElementById('ipTimeout').textContent =
-                  `IP-Scan Timeout: ${s.ip_scan_timeout}s`;
-            } catch {}
-        }
+    /* Status polling */
+    async function refreshStatus() {
+      try {
+        const s = await doFetch('/api/status');
+        document.getElementById('scanningStatus').textContent =
+          `Scanning Status: ${s.scanning_status || 'Idle'}`;
+        document.getElementById('scanningMode').textContent =
+          `Scanning Mode: ${s.scanning_mode || 'None'}`;
+        document.getElementById('currentIP').textContent =
+          `Current IP: ${s.current_scanned_ip || 'None'}`;
+        document.getElementById('cooldownRemaining').textContent =
+          `Cooldown Remaining: ${s.cooldown_remaining}s`;
+        document.getElementById('lastError').textContent =
+          `Last Error: ${s.last_error || 'None'}`;
+        document.getElementById('ipTimeout').textContent =
+          `IP-Scan Timeout: ${s.ip_scan_timeout || '—'}s`;
+      } catch {}
+    }
 
-        /* Chart + ranking */
-        async function fetchData() { return doFetch('/api/data'); }
+    /* Fetch chart data */
+    async function fetchData() {
+      return doFetch('/api/data');
+    }
 
-        function renderChart(data) {
-  // 1. Compute per‐map averages (excluding "Other Maps")
-  const mapDatasets = data.datasets.filter(ds => ds.label !== 'Other Maps');
-  const mapAverages = mapDatasets.map(ds => {
-    const sum = ds.data.reduce((a, b) => a + b, 0);
-    return { label: ds.label, avg: sum / ds.data.length };
+    function renderChart(data) {
+  // ── 0) Always normalize every day's percentages to exactly 100% ─────────
+  data.labels.forEach((_, idx) => {
+    // sum of all series at this day
+    const sumAll = data.datasets.reduce((acc, ds) => acc + (ds.data[idx] || 0), 0);
+    // how far off from 100 we are
+    const diff = Math.round((100 - sumAll) * 100) / 100;
+    if (Math.abs(diff) > 1e-6) {
+      // try to fold into "Other maps"; if missing, use last dataset
+      const otherIndex = data.datasets.findIndex(ds => ds.label === 'Other maps');
+      const targetDs = otherIndex >= 0
+        ? data.datasets[otherIndex]
+        : data.datasets[data.datasets.length - 1];
+      // apply the tiny adjustment
+      targetDs.data[idx] = Math.round((targetDs.data[idx] + diff) * 100) / 100;
+    }
   });
-  // 2. Sort descending by average
-  mapAverages.sort((a, b) => b.avg - a.avg);
 
-  // 3. Total of all averages for percent calculation
-  const totalAvg = mapAverages.reduce((sum, m) => sum + m.avg, 0);
+  // ── 1) Sanity check per day ───────────────────────────────────────────────
+  const errors = [];
+  data.labels.forEach((day, i) => {
+    const sumAll = data.datasets.reduce((acc, ds) => acc + (ds.data[i] || 0), 0);
+    const rounded = Math.round(sumAll * 100) / 100;
+    if (Math.abs(rounded - 100) > 0.01) {
+      errors.push(`Date ${day}: sum = ${rounded}%, expected 100%`);
+    }
+  });
+  const errorEl = document.getElementById('dataErrors');
+  errorEl.innerHTML = errors.map(e => `<p>${e}</p>`).join('');
+  if (errors.length) console.error('Sanity check failed:', errors);
 
-  // 4. Build the ranking list HTML with medals & percentages
-  document.getElementById('mapRanking').innerHTML = mapAverages
-    .map((m, i) => {
-      const pct = (m.avg / totalAvg) * 100;
-      let medal = '';
-      if (i === 0)      medal = '🥇 ';
-      else if (i === 1) medal = '🥈 ';
-      else if (i === 2) medal = '🥉 ';
-      return `<li>
-                ${medal}${m.label}
-                <span class="rank-pct">(${pct.toFixed(1)}%)</span>
-              </li>`;
-    })
-    .join('');
+  // ── 2) Update ranking list ───────────────────────────────────────────────
+  document.getElementById('mapRanking').innerHTML =
+    data.ranking.map((m, idx) => {
+      const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '';
+      return `<li>${medal}${m.label}<span class="rank-pct">(${m.pop}%)</span></li>`;
+    }).join('');
 
-  // 5. Prepare raw totals & chart datasets
-  const rawTotals = data.datasets[0].data.map((_, idx) =>
-    data.datasets.reduce((sum, ds) => sum + ds.data[idx], 0)
-  );
-  const avgDailyCount = rawTotals.reduce((s, v) => s + v, 0) / rawTotals.length;
-  const percentDatasets = data.datasets.map(ds => ({
-    label: ds.label,
-    data: ds.data.map((count, idx) =>
-      rawTotals[idx] ? (count / rawTotals[idx]) * 100 : 0
-    ),
-    borderColor: ds.borderColor,
-    backgroundColor: ds.backgroundColor,
-    fill: ds.fill
-  }));
+  // ── 3) Compute y-axis bounds ─────────────────────────────────────────────
+  const allPct = data.datasets
+    .filter(ds => ds.label !== 'Other maps')
+    .flatMap(ds => ds.data);
+  const minPct = Math.min(...allPct), maxPct = Math.max(...allPct);
 
-  // 6. Render Chart.js line chart
+  // ── 4) Share-of-day line chart ────────────────────────────────────────────
   const ctx = document.getElementById('chartCanvas').getContext('2d');
   if (window.myChart) window.myChart.destroy();
   window.myChart = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: data.labels,
-      datasets: percentDatasets
-    },
+    data: { labels: data.labels, datasets: data.datasets },
     options: {
-      responsive: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: {
-        title: {
-          display: true,
-          text: `Top ${data.shownMapsCount} Maps as % of Shown Total`,
-          color: 'white'
-        },
-        legend: { labels: { color: 'white' } },
         tooltip: {
           mode: 'index',
           intersect: false,
-          itemSort: (a, b) => {
-            const oa = a.dataset.label === 'Other Maps';
-            const ob = b.dataset.label === 'Other Maps';
-            if (oa && !ob) return 1;
-            if (!oa && ob) return -1;
-            return b.parsed.y - a.parsed.y;
-          },
           callbacks: {
-            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`
+            label: ctx => {
+              const i = ctx.dataIndex;
+              const val = ctx.dataset.data[i] || 0;
+              const tot = ctx.chart.data.datasets
+                .reduce((s, d) => s + (d.data[i] || 0), 0);
+              return `${ctx.dataset.label}: ${(tot ? val / tot * 100 : 0).toFixed(2)}%`;
+            }
+          },
+          itemSort: (a, b) => {
+            if (a.dataset.label === 'Other maps') return 1;
+            if (b.dataset.label === 'Other maps') return -1;
+            return b.parsed.y - a.parsed.y;
           }
+        },
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: 'white',
+            generateLabels: chart => {
+              const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+              const idxO = labels.findIndex(l => l.text === 'Other maps');
+              let other = null;
+              if (idxO !== -1) other = labels.splice(idxO, 1)[0];
+              labels.sort((a, b) => {
+                const da = chart.data.datasets[a.datasetIndex].data;
+                const db = chart.data.datasets[b.datasetIndex].data;
+                return (db[db.length - 1] || 0) - (da[da.length - 1] || 0);
+              });
+              if (other) labels.push(other);
+              return labels;
+            }
+          }
+        },
+        title: {
+          display: true,
+          text: `Top ${data.shownMapsCount} Maps (share per day %)`,
+          color: 'white'
         }
       },
       scales: {
-        x: {
-          beginAtZero: true,
-          ticks: { color: 'white' },
-          grid: { color: 'rgba(255,255,255,0.2)' }
-        },
+        x: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } },
         y: {
-          beginAtZero: true,
-          max: 100,
+          min: minPct,
+          max: maxPct,
           ticks: { color: 'white', callback: v => v + '%' },
           grid: { color: 'rgba(255,255,255,0.2)' }
         }
@@ -401,39 +446,100 @@
     }
   });
 
-  // 7. Update average player‐count text
+  // ── 5) Daily Avg Players ─────────────────────────────────────────────────
+  const avgCtx = document.getElementById('avgChartCanvas').getContext('2d');
+  if (window.avgChart) window.avgChart.destroy();
+  window.avgChart = new Chart(avgCtx, {
+    type: 'line',
+    data: {
+      labels: data.labels,
+      datasets: [{
+        label: 'Daily Avg Players',
+        data: data.dailyTotals,
+        borderColor: 'white',
+        fill: false
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: 'white' } },
+        title: { display: true, text: 'Daily Avg Players', color: 'white' }
+      },
+      scales: {
+        x: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } },
+        y: { beginAtZero: true, ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } }
+      }
+    }
+  });
+
+  // ── 6) Snapshots-per-Day ──────────────────────────────────────────────────
+  const snapCtx = document.getElementById('snapshotChartCanvas').getContext('2d');
+  if (window.snapChart) window.snapChart.destroy();
+  window.snapChart = new Chart(snapCtx, {
+    type: 'bar',
+    data: {
+      labels: data.labels,
+      datasets: [{
+        label: 'Snapshots per Day',
+        data: data.snapshotCounts,
+        borderColor: 'white',
+        backgroundColor: 'rgba(255,255,255,0.2)'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        title: { display: true, text: 'Snapshots per Day', color: 'white' }
+      },
+      scales: {
+        x: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } },
+        y: { beginAtZero: true, ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } }
+      }
+    }
+  });
+
+  // ── 7) Text summary ───────────────────────────────────────────────────────
+  const avgCount = data.averageDailyPlayerCount.toFixed(1);
   document.getElementById('playerCountDisplay').textContent =
-    `Average player count for maps containing "${document.getElementById('OnlyMapsContaining').value}": ${avgDailyCount.toFixed(1)}`;
+    `Average player count (${document.getElementById('OnlyMapsContaining').value}): ${avgCount}`;
 }
 
-        const updateChart = createThrottledFunction(async()=>{
-            const formData = new FormData(document.getElementById('paramsForm'));
-            const params = {};
-            formData.forEach((v,k)=>{ if(k!=='apiKey') params[k]=v; });
-            await doFetch('/api/update_params',{
-                method:'POST',
-                headers:{'Content-Type':'application/json'},
-                body:JSON.stringify(params)
-            });
-            await checkCSVStatus();
-            const data = await fetchData();
-            if(!data.labels?.length){ alert('No chart data found (CSV empty or out of range).'); return; }
-            renderChart(data);
-        },1000);
+    /* Throttled chart update */
+    const updateChart = createThrottledFunction(async () => {
+      const fd = new FormData(document.getElementById('paramsForm'));
+      const obj = {};
+      fd.forEach((v, k) => { if (k !== 'apiKey') obj[k] = v; });
+      await doFetch('/api/update_params', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(obj)
+      });
+      await checkCSVStatus();
+      const chartData = await fetchData();
+      if (!chartData.labels.length) {
+        alert('No chart data found — CSV empty or out of date range.');
+        return;
+      }
+      renderChart(chartData);
+    }, 1000);
 
-        /* Init & listeners */
-        document.addEventListener('DOMContentLoaded',async()=>{
-            updateConnectionStatus();
-            await checkApiKeyState();
-            await checkCSVStatus();
-            await refreshStatus();
-            updateChart();
-        });
-        document.getElementById('refreshChart').addEventListener('click',updateChart);
-        document.getElementById('startScan').addEventListener('click',startScanning);
-        document.getElementById('stopScan').addEventListener('click',stopScanning);
-        document.getElementById('refreshStatus').addEventListener('click',refreshStatus);
-        document.getElementById('apiKey').addEventListener('input',()=>checkApiKeyState().catch(console.error));
-    </script>
+    /* Initialization & event bindings */
+    document.addEventListener('DOMContentLoaded', async () => {
+      updateConnectionStatus();
+      await checkApiKeyState();
+      await checkCSVStatus();
+      await refreshStatus();
+      await updateChart();
+    });
+    document.getElementById('refreshChart').addEventListener('click', updateChart);
+    document.getElementById('startScan').addEventListener('click', startScanning);
+    document.getElementById('stopScan').addEventListener('click', stopScanning);
+    document.getElementById('refreshStatus').addEventListener('click', refreshStatus);
+    document.getElementById('apiKey').addEventListener('input', () => checkApiKeyState().catch(() => {}));
+  </script>
 </body>
 </html>
