@@ -9,10 +9,10 @@
     margin: 0;
     padding: 0;
     color: #e0e0e0;
-}
-
-/* Screen-reader-only utility */
-.sr-only {
+  }
+  
+  /* Screen-reader-only utility */
+  .sr-only {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -22,12 +22,12 @@
     clip: rect(0,0,0,0);
     white-space: nowrap;
     border: 0;
-}
-
-/* =====================================================
-   LAYOUT / CONTAINER
-   ===================================================== */
-.container {
+  }
+  
+  /* =====================================================
+     LAYOUT / CONTAINER
+     ===================================================== */
+  .container {
     width: 90%;
     max-width: 1400px;
     margin: 40px auto;
@@ -35,94 +35,107 @@
     background: #1e1e1e;
     border-radius: 8px;
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-}
-
-/* Header */
-header h1 {
+  }
+  
+  /* Header */
+  header h1 {
     text-align: center;
     margin-bottom: 20px;
     color: #f39c12;
-}
-
-/* =====================================================
-   THREE-COLUMN layout for ranking / chart+status / params
-   ===================================================== */
-.chart-params-container {
+  }
+  
+  /* =====================================================
+     THREE-COLUMN layout for ranking / chart+status / params
+     ===================================================== */
+  .chart-params-container {
     display: grid;
-    grid-template-columns: minmax(250px, 1fr) minmax(800px, 2fr) minmax(200px, 3fr);
+    /* LEFT column now auto-sized to its content */
+    grid-template-columns: auto minmax(800px, 2fr) minmax(200px, 3fr);
     gap: 20px;
     align-items: start;
-}
-
-/* allow the left & right panels to shrink */
-.chart-params-container > .ranking-section,
-.chart-params-container > .params-section {
+  }
+  
+  /* allow the left & right panels to shrink */
+  .chart-params-container > .ranking-section,
+  .chart-params-container > .params-section {
     min-width: 0;
-}
-
-/* keep the middle (chart) column at least as wide as the canvas */
-.chart-params-container > .chart-status-section {
+  }
+  
+  /* keep the middle (chart) column at least as wide as the canvas */
+  .chart-params-container > .chart-status-section {
     min-width: 800px;
-}
-
-/* =====================================================
-   Ranking section
-   ===================================================== */
-.ranking-section {
+  }
+  
+  /* =====================================================
+     RANKING SECTION
+     ===================================================== */
+  .ranking-section {
     background: rgba(0,0,0,0.3);
     padding: 1em;
     border-radius: 4px;
     color: white;
-}
-.ranking-section h2 {
+  }
+  .ranking-section h2 {
     margin-top: 0;
-}
-.ranking-section ol {
+  }
+  .ranking-section ol {
     list-style: none;
     padding-left: 0;
   }
-
+  
+  /* each item is one line, no wrapping, with ellipsis */
   .ranking-section li {
-    display: flex;
-    align-items: center;
+    position: relative;
+    padding-right: 4.5em;    /* leave room for the percent */
     margin-bottom: 0.5em;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
+  
+  /* percentage always at right, vertically centered */
   .ranking-section .rank-pct {
-    margin-left: auto;
+    position: absolute;
+    right: 0.5em;
+    top: 50%;
+    transform: translateY(-50%);
     font-size: 0.9em;
     color: #ccc;
+    white-space: nowrap;
   }
-
-/* Chart + status section container */
-.chart-status-section {
+  
+  /* =====================================================
+     Chart + status section container
+     ===================================================== */
+  .chart-status-section {
     display: flex;
     flex-direction: column;
     gap: 1em;
-}
-
-/* =====================================================
-   Chart box
-   ===================================================== */
-.chart-box {
+  }
+  
+  /* =====================================================
+     Chart box
+     ===================================================== */
+  .chart-box {
     background: #333;
     padding: 20px;
     border-radius: 8px;
     text-align: center;
-}
-#playerCountDisplay {
+  }
+  #playerCountDisplay {
     margin-top: 10px;
     font-size: 18px;
-}
-
-/* =====================================================
-   Buttons
-   ===================================================== */
-.btn-group {
+  }
+  
+  /* =====================================================
+     Buttons
+     ===================================================== */
+  .btn-group {
     display: inline-flex;
     gap: 10px;
     margin-bottom: 15px;
-}
-.btn {
+  }
+  .btn {
     padding: 10px 20px;
     background-color: #f39c12;
     border: none;
@@ -131,101 +144,93 @@ header h1 {
     cursor: pointer;
     font-size: 16px;
     transition: background-color .3s ease;
-}
-.btn:hover {
+  }
+  .btn:hover {
     background-color: #d35400;
-}
-
-/* =====================================================
-   Status panel
-   ===================================================== */
-.status-section {
+  }
+  
+  /* =====================================================
+     Status panel
+     ===================================================== */
+  .status-section {
     background: #333;
     padding: 20px;
     border-radius: 8px;
     text-align: center;
-}
-.status-section h2 {
+  }
+  .status-section h2 {
     color: #f39c12;
     margin-bottom: 15px;
-}
-.status-section p {
+  }
+  .status-section p {
     margin: 5px 0;
     font-size: 16px;
-}
-
-/* =====================================================
-   Parameters panel
-   ===================================================== */
-.params-section {
+  }
+  
+  /* =====================================================
+     Parameters panel
+     ===================================================== */
+  .params-section {
     background: #2c2c2c;
     padding: 20px;
     border-radius: 8px;
     display: flex;
     flex-direction: column;
-}
-.params-section h2 {
+  }
+  .params-section h2 {
     text-align: center;
     margin-bottom: 20px;
     color: #f39c12;
-}
-
-.form-group {
+  }
+  
+  .form-group {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     margin-bottom: 15px;
-}
-.form-group label {
+  }
+  .form-group label {
     flex: 1 1 200px;
     margin-right: 10px;
     text-align: right;
-}
-
-/* allow labels and inputs to shrink inside their flex container */
-.form-group > * {
+  }
+  .form-group > * {
     min-width: 0;
-}
-
-/* Common look for input & select */
-.form-group input,
-.form-group select {
+  }
+  .form-group input,
+  .form-group select {
     flex: 2 1 300px;
     padding: 8px;
     border: 1px solid #444;
     border-radius: 4px;
     background: #1e1e1e;
     color: #e0e0e0;
-}
-
-/* Hide fast write and runtime groups by default */
-#fastWriteGroup,
-#runtimeMinutesGroup {
+  }
+  #fastWriteGroup,
+  #runtimeMinutesGroup {
     display: none;
-}
-
-/* Small-screen tweaks */
-@media (max-width: 600px) {
+  }
+  @media (max-width: 600px) {
     .form-group {
-        flex-direction: column;
-        align-items: flex-start;
+      flex-direction: column;
+      align-items: flex-start;
     }
     .form-group label {
-        text-align: left;
-        margin-bottom: 5px;
+      text-align: left;
+      margin-bottom: 5px;
     }
-}
-
-/* =====================================================
-   FOOTER
-   ===================================================== */
-footer {
+  }
+  
+  /* =====================================================
+     FOOTER
+     ===================================================== */
+  footer {
     background: #1e1e1e;
     padding: 20px 0;
     color: #e0e0e0;
     margin-top: 40px;
-}
-.footer-content {
+  }
+  .footer-content {
     width: 90%;
     max-width: 1200px;
     margin: 0 auto;
@@ -234,50 +239,65 @@ footer {
     align-items: center;
     gap: 10px;
     text-align: center;
-}
-.description {
+  }
+  .description {
     font-size: 14px;
     line-height: 1.5;
     max-width: 900px;
-}
-.copyright {
+  }
+  .copyright {
     font-size: 14px;
     opacity: .8;
-}
-
-/* =====================================================
-   GITHUB CORNER (top-right “notch”)
-   ===================================================== */
-.github-corner svg {
+  }
+  
+  /* =====================================================
+     GITHUB CORNER (top-right “notch”)
+     ===================================================== */
+  .github-corner svg {
     position: fixed;
     top: 0;
     right: 0;
     z-index: 1000;
     width: 100px;
     height: 100px;
-    fill: #f39c12;       /* corner background */
-    color: #ffffff;      /* octocat */
+    fill: #f39c12;
+    color: #ffffff;
     transition: transform .3s ease;
-}
-.github-corner:hover svg {
+  }
+  .github-corner:hover svg {
     transform: scale(1.1);
-}
-.github-corner .octo-arm {
+  }
+  .github-corner .octo-arm {
     transform-origin: 130px 106px;
-}
-.github-corner:hover .octo-arm {
+  }
+  .github-corner:hover .octo-arm {
     animation: octo-wave 560ms ease-in-out;
-}
-@keyframes octo-wave {
+  }
+  @keyframes octo-wave {
     0%,100% { transform: rotate(0deg); }
     20%,60% { transform: rotate(-25deg); }
     40%,80% { transform: rotate(10deg); }
-}
-@media (max-width: 500px) {
+  }
+  @media (max-width: 500px) {
     .github-corner:hover .octo-arm { animation: none; }
     .github-corner .octo-arm       { animation: octo-wave 560ms ease-in-out; }
+  }
+  
+  /* Connection status colours */
+  #connectionStatus.connected    { color: #14c521; }
+  #connectionStatus.disconnected { color: #e02424; }
+
+
+  /* make the chart container scrollable if it still overflows */
+.chart-box {
+  overflow-x: auto;
+  position: relative; /* ensure it encloses its children */
 }
 
-/* Connection status colours */
-#connectionStatus.connected    { color: #14c521; }
-#connectionStatus.disconnected { color: #e02424; }
+/* make canvases scale down to the container width */
+.chart-box canvas {
+  max-width: 100%;
+  height: auto !important;
+  display: block;
+  margin: 0 auto;
+}
