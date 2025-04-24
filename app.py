@@ -23,7 +23,7 @@ import threading
 import json
 from datetime import datetime
 from functools import wraps
-
+import ast, os, csv, time
 from flask import Flask, jsonify, request, g
 from waitress import serve
 
@@ -38,6 +38,10 @@ from pythonvalve.valve.source import master_server
 PUBLIC_MODE           = False           # False → bind 127.0.0.1
 MAX_SINGLE_IP_TIMEOUT = 1.0             # hard clamp per server query
 ReaderTimeFormat      = '%Y-%m-%d-%H:%M:%S'
+
+
+# ─── error counter ───────────────────────────────────────────────────────────
+scan_error_count = 0
 
 # ─── flask app ────────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder='static')
@@ -84,7 +88,7 @@ def require_api_key(fn):
 
 # ─── rate limiting (30 requests per 15 s / IP) ────────────────────────────────
 REQUESTS_PER_IP = {}
-MAX_REQ = 30
+MAX_REQ = 60
 WINDOW = 15
 
 def rate_limiter(fn):
@@ -133,12 +137,26 @@ def RawData():
     if not os.path.exists(path) or os.path.getsize(path) == 0:
         return []
     out = []
+    import ast
     with open(path, newline='', encoding='utf-8') as f:
         for row in csv.reader(f):
+            # if the row’s first cell is a Python list literal, expand each cell
+            if row and row[0].startswith('[') and row[0].endswith(']'):
+                for cell in row:
+                    try:
+                        parsed = ast.literal_eval(cell)
+                        # only accept lists of length >=7 and non-blacklisted IPs
+                        if isinstance(parsed, list) and len(parsed) >= 7 and parsed[0] not in config["IpBlackList"]:
+                            out.append(parsed)
+                    except Exception:
+                        continue
+                continue
+            # otherwise, normal filtering
             if len(row) < 7 or row[0] in config["IpBlackList"]:
                 continue
             out.append(row)
     return out
+
 
 def filter_by_timerange(rows):
     s = datetime.strptime(config["Start_Date"], '%Y-%m-%d')
@@ -320,10 +338,12 @@ last_error_message = ""
 
 def IpReader(ip):
     """Query single game server, return CSV row or None"""
-    global last_error_message
+    global last_error_message, scan_error_count
     try:
         addr = (ip[0], int(ip[1]))
-        info = a2s.info(addr, timeout=min(config["servertimeout"], MAX_SINGLE_IP_TIMEOUT))
+        info = a2s.info(addr,
+            timeout=min(config["servertimeout"], MAX_SINGLE_IP_TIMEOUT)
+        )
         players = info.player_count - info.bot_count
         if players < 1:
             return None
@@ -333,8 +353,10 @@ def IpReader(ip):
         ]
         return row
     except Exception as e:
+        scan_error_count += 1
         last_error_message = str(e)
         return None
+
 
 def SlowScan():
     ips = []
@@ -350,19 +372,93 @@ def SlowScan():
     return ips
 
 def FastScan(rawfile):
+    """Read previous CSV output and return a unique list of (ip, port). 
+    Expands any Python-list literals into separate rows."""
     ips = []
+    import ast
+
     if os.path.exists(rawfile):
         with open(rawfile, newline='', encoding='utf-8') as f:
             for r in csv.reader(f):
+                # Case A: entire row is one or more list-literals
+                if r and r[0].startswith('[') and r[0].endswith(']'):
+                    for cell in r:
+                        try:
+                            parsed = ast.literal_eval(cell)
+                            # parsed should be a list-like row: [ip, port, ...]
+                            if (
+                                isinstance(parsed, list) and 
+                                len(parsed) >= 2 and 
+                                is_ip_address(parsed[0])
+                            ):
+                                port = int(parsed[1])
+                                ips.append((parsed[0], port))
+                        except Exception:
+                            continue
+                    continue
+
+                # Case B: normal, well-formed CSV row
                 if len(r) >= 2:
-                    ips.append((r[0], int(r[1])))
+                    ip, port_str = r[0], r[1]
+                    if is_ip_address(ip):
+                        try:
+                            port = int(port_str)
+                        except ValueError:
+                            continue
+                        ips.append((ip, port))
+
+    # preserve order, remove duplicates
     return list(dict.fromkeys(ips))
+
+
+
+
+def normalize_rawfile(path):
+    """Flatten any Python-list literals in the CSV into real rows, preserving any trailing cells (e.g. epoch index)."""
+    tmp = path + '.tmp'
+    with open(path, newline='', encoding='utf-8') as fin, \
+         open(tmp, 'w', newline='', encoding='utf-8') as fout:
+        reader = csv.reader(fin)
+        writer = csv.writer(fout)
+
+        for row in reader:
+            parsed_lists = []
+            trailing    = []
+            for cell in row:
+                txt = cell.strip()
+                if txt.startswith('[') and txt.endswith(']'):
+                    try:
+                        lst = ast.literal_eval(txt)
+                        if isinstance(lst, list):
+                            parsed_lists.append(lst)
+                            continue
+                    except Exception:
+                        pass
+                # not a list-literal → keep for trailing (e.g. epoch index)
+                trailing.append(cell)
+
+            if parsed_lists:
+                # for each parsed list, write it + any trailing cells
+                for lst in parsed_lists:
+                    writer.writerow(lst + trailing)
+            else:
+                # normal row, write unchanged
+                writer.writerow(row)
+
+    os.replace(tmp, path)
+
 
 def CSVWriter(rows, rawfile):
     if not rows:
         return
-    if not os.path.exists(rawfile):
+
+    # 1) normalize existing file so no “[…]” cells remain
+    if os.path.exists(rawfile):
+        normalize_rawfile(rawfile)
+    else:
         open(rawfile, 'w').close()
+
+    # 2) append new rows with fresh epoch index
     idx = int(time.time())
     with open(rawfile, 'a', newline='', encoding='utf-8') as f:
         w = csv.writer(f)
@@ -370,7 +466,7 @@ def CSVWriter(rows, rawfile):
             w.writerow(r + [str(idx)])
 
 def scan_loop():
-    global scanning_mode, current_scanned_ip
+    global scanning_mode, current_scanned_ip, scan_error_count
     rawfile = os.path.join(BASE_DIR, config["Filename"])
     fast_delay = config["FastWriteDelay"] * 60
     next_fast = 0
@@ -378,19 +474,25 @@ def scan_loop():
 
     while not scanning_stop_event.is_set():
         now = time.time()
+
         if fast_count >= 15:
             # slow scan
             scanning_mode = "Slow"
-            rows = [IpReaderMulti(SlowScan())]
+            scan_error_count = 0
+            rows = IpReaderMulti(SlowScan())
             CSVWriter(rows, rawfile)
             fast_count = 0
             next_fast = now + fast_delay
+
         elif now >= next_fast:
             # fast scan
             scanning_mode = "Fast"
-            CSVWriter(IpReaderMulti(FastScan(rawfile)), rawfile)
+            scan_error_count = 0
+            rows = IpReaderMulti(FastScan(rawfile))
+            CSVWriter(rows, rawfile)
             fast_count += 1
             next_fast = now + fast_delay
+
         else:
             # cooldown
             scanning_mode = "Cooldown"
@@ -398,6 +500,7 @@ def scan_loop():
 
     scanning_mode = "None"
     current_scanned_ip = ""
+
 
 def IpReaderMulti(lst):
     out = []
@@ -487,10 +590,12 @@ def api_data():
 @rate_limiter
 def api_status():
     return jsonify({
-        "scanning_mode": scanning_mode,
+        "scanning_mode":      scanning_mode,
         "current_scanned_ip": current_scanned_ip,
-        "last_error": last_error_message
+        "last_error":         last_error_message,
+        "error_count":        scan_error_count
     })
+
 
 @app.route('/api/csv_status')
 @rate_limiter
