@@ -89,11 +89,9 @@
           <p id="scanningStatus">Scanning Status: Idle</p>
           <p id="scanningMode">Scanning Mode: None</p>
           <p id="currentIP">Current IP: None</p>
-          <p id="cooldownRemaining">Cooldown Remaining: — s</p>
           <p id="lastError">Last Error: None</p>
+          <p id="errorCount">Error Count: 0</p>
           <p id="requestsLeft">Requests Left: —</p>
-          <p id="ratelimitReset">Rate-limit Reset In: — s</p>
-          <p id="ipTimeout">IP-Scan Timeout: — s</p>
           <p id="apiKeyState">API Key State: Unknown</p>
           <p id="connectionStatus" class="disconnected">No server found</p>
           <button id="refreshStatus" class="btn">Refresh Status</button>
@@ -271,19 +269,20 @@
 
     /* Connection heartbeat */
     async function updateConnectionStatus() {
-      const el = document.getElementById('connectionStatus');
-      try {
-        const d = await fetch('/api/heartbeat', { cache: 'no-store' })
-          .then(r => { if (!r.ok) throw ''; return r.json(); });
-        el.textContent = 'Connected';
-        el.classList.replace('disconnected', 'connected');
-        document.getElementById('requestsLeft').textContent = `Requests Left: ${d.requests_left}`;
-        document.getElementById('ratelimitReset').textContent = `Rate-limit Reset In: ${d.ratelimit_reset}s`;
-      } catch {
-        el.textContent = 'No server found';
-        el.classList.replace('connected', 'disconnected');
-      }
+    const el = document.getElementById('connectionStatus');
+    try {
+      const d = await fetch('/api/heartbeat', { cache: 'no-store' })
+        .then(r => { if (!r.ok) throw ''; return r.json(); });
+      el.textContent = 'Connected';
+      el.classList.replace('disconnected', 'connected');
+      document.getElementById('requestsLeft').textContent =
+        `Requests Left: ${d.requests_left}`;
+    } catch {
+      el.textContent = 'No server found';
+      el.classList.replace('connected', 'disconnected');
     }
+  }
+
     setInterval(updateConnectionStatus, 5000);
 
     /* CSV status */
@@ -322,12 +321,10 @@
           `Scanning Mode: ${s.scanning_mode || 'None'}`;
         document.getElementById('currentIP').textContent =
           `Current IP: ${s.current_scanned_ip || 'None'}`;
-        document.getElementById('cooldownRemaining').textContent =
-          `Cooldown Remaining: ${s.cooldown_remaining}s`;
         document.getElementById('lastError').textContent =
           `Last Error: ${s.last_error || 'None'}`;
-        document.getElementById('ipTimeout').textContent =
-          `IP-Scan Timeout: ${s.ip_scan_timeout || '—'}s`;
+        document.getElementById('errorCount').textContent =
+           `Error Count: ${s.error_count || 0}`;
       } catch {}
     }
 
