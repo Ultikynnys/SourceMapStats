@@ -346,6 +346,30 @@ def SlowScan():
         last_error_message = f"Master server: {e}"
     return ips
 
+def normalize_rawfile(rawfile):
+    # Normalize any serialized‐list rows back into flat CSV rows.
+    import csv, ast, os
+
+    temp_file = rawfile + '.tmp'
+    with open(rawfile, newline='', encoding='utf-8') as infile, \
+         open(temp_file, 'w', newline='', encoding='utf-8') as outfile:
+        reader = csv.reader(infile)
+        writer = csv.writer(outfile)
+        for row in reader:
+            # if first cell looks like a list literal, unpack each into its own row
+            if row and row[0].startswith('[') and row[0].endswith(']'):
+                for cell in row:
+                    try:
+                        parsed = ast.literal_eval(cell)
+                        if isinstance(parsed, list):
+                            writer.writerow(parsed)
+                    except Exception:
+                        continue
+            else:
+                writer.writerow(row)
+    os.replace(temp_file, rawfile)
+
+
 def CSVWriter(rows, rawfile):
     if not rows:
         return
