@@ -337,7 +337,7 @@ def IpReader(ip):
 
     except socket.timeout:
         # real timeout → grow timeout
-        new_t = min(2.0, timeout + 0.1)
+        new_t = min(2.0, timeout + 0.5)
         ip_timeouts[ip_str] = new_t
         save_timeouts()
 
