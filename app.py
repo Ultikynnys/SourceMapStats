@@ -21,7 +21,7 @@ import a2s
 from pythonvalve.valve.source import master_server
 
 # ─── basic constants ──────────────────────────────────────────────────────────
-PUBLIC_MODE           = False           # False → bind 127.0.0.1
+PUBLIC_MODE           = True           # False → bind 127.0.0.1
 MAX_SINGLE_IP_TIMEOUT = 1.0             # hard clamp per server query
 ReaderTimeFormat      = '%Y-%m-%d-%H:%M:%S'
 
@@ -369,32 +369,46 @@ def SlowScan():
 
 def FastScan(rawfile):
     ips = []
+    seen = set()
     if os.path.exists(rawfile):
         with open(rawfile, newline='', encoding='utf-8') as f:
-            for r in csv.reader(f):
-                if r and r[0].startswith('[') and r[0].endswith(']'):
-                    for cell in r:
+            reader = csv.reader(f)
+            for row in reader:
+                # handle rows where each cell is a serialized list
+                if row and row[0].startswith('[') and row[0].endswith(']'):
+                    for cell in row:
                         try:
                             parsed = ast.literal_eval(cell)
                             if (
-                                isinstance(parsed, list) and 
-                                len(parsed) >= 2 and 
+                                isinstance(parsed, list) and
+                                len(parsed) >= 2 and
                                 is_ip_address(parsed[0])
                             ):
+                                ip_str = parsed[0]
                                 port = int(parsed[1])
-                                ips.append((parsed[0], port))
+                                key = (ip_str, port)
+                                if key not in seen:
+                                    seen.add(key)
+                                    ips.append(key)
                         except Exception:
                             continue
                     continue
-                if len(r) >= 2:
-                    ip, port_str = r[0], r[1]
-                    if is_ip_address(ip):
+
+                # handle plain CSV rows
+                if len(row) >= 2:
+                    ip_str, port_str = row[0], row[1]
+                    if is_ip_address(ip_str):
                         try:
                             port = int(port_str)
                         except ValueError:
                             continue
-                        ips.append((ip, port))
-    return list(dict.fromkeys(ips))
+                        key = (ip_str, port)
+                        if key not in seen:
+                            seen.add(key)
+                            ips.append(key)
+
+    return ips
+
 
 def normalize_rawfile(path):
     tmp = path + '.tmp'
