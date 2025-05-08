@@ -22,7 +22,7 @@ from pythonvalve.valve.source import master_server
 
 # ─── basic constants ──────────────────────────────────────────────────────────
 PUBLIC_MODE           = True           # False → bind 127.0.0.1
-MAX_SINGLE_IP_TIMEOUT = 1.0             # hard clamp per server query
+MAX_SINGLE_IP_TIMEOUT = 1.0            # hard clamp per server query
 ReaderTimeFormat      = '%Y-%m-%d-%H:%M:%S'
 
 # ─── error counter ───────────────────────────────────────────────────────────
@@ -46,7 +46,6 @@ config = {
     "timeout_query":      0.5,
     "timeout_master":     60,
     "regionserver":       "all",
-    "FastWriteDelay":     10,      # minutes between fast scans
     "RuntimeMinutes":     60,
     "RunForever":         True,
     "servertimeout":      0.5
@@ -71,7 +70,7 @@ def require_api_key(fn):
         return fn(*args, **kwargs)
     return wrapped
 
-# ─── rate limiting (30 requests per 15 s / IP) ────────────────────────────────
+# ─── rate limiting (60 requests per 15 s / IP) ────────────────────────────────
 REQUESTS_PER_IP = {}
 MAX_REQ = 60
 WINDOW = 15
@@ -116,16 +115,13 @@ def is_ip_address(ip: str) -> bool:
     return re.match(r"^(([0-1]?\d?\d|2[0-4]\d|25[0-5])\.){3}"
                     r"([0-1]?\d?\d|2[0-4]\d|25[0-5])$", ip) is not None
 
-# ─── per-IP adaptive timeouts & fast-scan blacklist ───────────────────────────
+# ─── per-IP adaptive timeouts ────────────────────────────────────────────────
 IP_TIMEOUTS_FILE = os.path.join(BASE_DIR, 'ip_timeouts.json')
 try:
     with open(IP_TIMEOUTS_FILE, 'r') as f:
         ip_timeouts = {ip: float(t) for ip, t in _json.load(f).items()}
 except FileNotFoundError:
     ip_timeouts = {}
-
-# when an IP hits max timeout, skip it for this many upcoming Fast scans
-ip_blacklist_counts = {}
 
 def save_timeouts():
     with open(IP_TIMEOUTS_FILE, 'w') as f:
@@ -284,7 +280,7 @@ def get_chart_data():
         "totalFilteredMaps": len(map_avg)
     }
 
-# ─── scanning logic (slow/fast scans) ─────────────────────────────────────────
+# ─── scanning logic (slow-only) ───────────────────────────────────────────────
 scanning_stop_event = threading.Event()
 scanning_thread = None
 scanning_mode = "None"
@@ -293,23 +289,10 @@ last_error_message = ""
 
 def IpReader(ip):
     """Query single game server, return CSV row or None,
-       with adaptive per-IP timeouts and fast-scan blacklisting."""
+       with adaptive per-IP timeouts."""
     global last_error_message, scan_error_count
 
     ip_str = ip[0]
-
-    # ── Fast-scan blacklist logic ────────────────────────────────────────────
-    if scanning_mode == "Fast":
-        cnt = ip_blacklist_counts.get(ip_str, 0)
-        if cnt > 0:
-            cnt -= 1
-            ip_blacklist_counts[ip_str] = cnt
-            # when the last skip is used up, reset timeout to 1.9 s
-            if cnt == 0:
-                ip_timeouts[ip_str] = 1.9
-                save_timeouts()
-            return None
-
     addr = (ip_str, int(ip[1]))
     timeout = ip_timeouts.get(ip_str, config["servertimeout"])
 
@@ -341,10 +324,6 @@ def IpReader(ip):
         ip_timeouts[ip_str] = new_t
         save_timeouts()
 
-        # if we've hit the 2 s cap, start a 10-scan blacklist
-        if new_t >= 2.0:
-            ip_blacklist_counts[ip_str] = 10
-
         scan_error_count += 1
         last_error_message = f"Timeout after {timeout}s"
         return None
@@ -367,76 +346,6 @@ def SlowScan():
         last_error_message = f"Master server: {e}"
     return ips
 
-def FastScan(rawfile):
-    ips = []
-    seen = set()
-    if os.path.exists(rawfile):
-        with open(rawfile, newline='', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            for row in reader:
-                # handle rows where each cell is a serialized list
-                if row and row[0].startswith('[') and row[0].endswith(']'):
-                    for cell in row:
-                        try:
-                            parsed = ast.literal_eval(cell)
-                            if (
-                                isinstance(parsed, list) and
-                                len(parsed) >= 2 and
-                                is_ip_address(parsed[0])
-                            ):
-                                ip_str = parsed[0]
-                                port = int(parsed[1])
-                                key = (ip_str, port)
-                                if key not in seen:
-                                    seen.add(key)
-                                    ips.append(key)
-                        except Exception:
-                            continue
-                    continue
-
-                # handle plain CSV rows
-                if len(row) >= 2:
-                    ip_str, port_str = row[0], row[1]
-                    if is_ip_address(ip_str):
-                        try:
-                            port = int(port_str)
-                        except ValueError:
-                            continue
-                        key = (ip_str, port)
-                        if key not in seen:
-                            seen.add(key)
-                            ips.append(key)
-
-    return ips
-
-
-def normalize_rawfile(path):
-    tmp = path + '.tmp'
-    with open(path, newline='', encoding='utf-8') as fin, \
-         open(tmp, 'w', newline='', encoding='utf-8') as fout:
-        reader = csv.reader(fin)
-        writer = csv.writer(fout)
-        for row in reader:
-            parsed_lists = []
-            trailing    = []
-            for cell in row:
-                txt = cell.strip()
-                if txt.startswith('[') and txt.endswith(']'):
-                    try:
-                        lst = ast.literal_eval(txt)
-                        if isinstance(lst, list):
-                            parsed_lists.append(lst)
-                            continue
-                    except Exception:
-                        pass
-                trailing.append(cell)
-            if parsed_lists:
-                for lst in parsed_lists:
-                    writer.writerow(lst + trailing)
-            else:
-                writer.writerow(row)
-    os.replace(tmp, path)
-
 def CSVWriter(rows, rawfile):
     if not rows:
         return
@@ -451,30 +360,20 @@ def CSVWriter(rows, rawfile):
             w.writerow(r + [str(idx)])
 
 def scan_loop():
-    global scanning_mode, current_scanned_ip, scan_error_count
     rawfile = os.path.join(BASE_DIR, config["Filename"])
-    fast_delay = config["FastWriteDelay"] * 60
-    next_fast = 0
-    fast_count = 0
+    interval = 10 * 60  # 10 minutes
+
     while not scanning_stop_event.is_set():
-        now = time.time()
-        if fast_count >= 15:
-            scanning_mode = "Slow"
-            scan_error_count = 0
-            rows = IpReaderMulti(SlowScan())
-            CSVWriter(rows, rawfile)
-            fast_count = 0
-            next_fast = now + fast_delay
-        elif now >= next_fast:
-            scanning_mode = "Fast"
-            scan_error_count = 0
-            rows = IpReaderMulti(FastScan(rawfile))
-            CSVWriter(rows, rawfile)
-            fast_count += 1
-            next_fast = now + fast_delay
-        else:
-            scanning_mode = "Cooldown"
-            scanning_stop_event.wait(next_fast - now)
+        scanning_mode = "Slow"
+        scan_error_count = 0
+
+        # perform a slow scan
+        rows = IpReaderMulti(SlowScan())
+        CSVWriter(rows, rawfile)
+
+        # wait until next scan or stop event
+        scanning_stop_event.wait(interval)
+
     scanning_mode = "None"
     current_scanned_ip = ""
 
@@ -533,12 +432,12 @@ def stop_scan():
 def update_params():
     allowed = {
         "MapsToShow", "Percision", "Start_Date", "End_Date",
-        "OnlyMapsContaining", "FastWriteDelay", "RuntimeMinutes",
+        "OnlyMapsContaining", "RuntimeMinutes",
         "ColorIntensity", "Game", "regionserver", "RunForever"
     }
     data = {k: v for k, v in (request.get_json() or {}).items() if k in allowed}
     for k, v in data.items():
-        if k in {"MapsToShow", "Percision", "FastWriteDelay", "RuntimeMinutes", "ColorIntensity"}:
+        if k in {"MapsToShow", "Percision", "RuntimeMinutes", "ColorIntensity"}:
             try:
                 config[k] = int(v)
             except:
