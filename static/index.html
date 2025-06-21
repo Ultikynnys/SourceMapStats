@@ -18,11 +18,23 @@
       width: 100%;
       height: 400px;
       margin: 0 auto;
+      transition: height 0.3s ease, margin 0.3s ease, visibility 0.3s ease;
+    }
+    .chart-container.empty {
+      height: 0;
+      visibility: hidden;
+      margin-top: 0 !important;
     }
     .chart-container canvas {
       width: 100% !important;
       height: 100% !important;
       display: block;
+    }
+    #loadingIndicator {
+      display: none;
+      color: #f39c12;
+      font-size: 1.2em;
+      padding: 20px;
     }
     #dataErrors p {
       margin: 0;
@@ -59,18 +71,21 @@
           <!-- Sanity check output -->
           <div id="dataErrors"></div>
 
+          <!-- Loading indicator -->
+          <div id="loadingIndicator" style="display: none; color: #f39c12; font-size: 1.2em; padding: 20px;">Loading chart data...</div>
+
           <!-- Main share-of-day chart -->
-          <div class="chart-container">
+          <div class="chart-container main-chart">
             <canvas id="chartCanvas"></canvas>
           </div>
-
-          <!-- Daily Avg Players chart -->
-          <div class="chart-container" style="margin-top:12px">
-            <canvas id="avgChartCanvas"></canvas>
+          <div class="chart-container mt-4">
+            <canvas id="totalPlayersChart"></canvas>
           </div>
 
+
+
           <!-- Snapshots-per-day chart -->
-          <div class="chart-container" style="margin-top:12px">
+          <div class="chart-container secondary-chart">
             <canvas id="snapshotChartCanvas"></canvas>
           </div>
 
@@ -104,12 +119,12 @@
         <h2>Parameters</h2>
         <form id="paramsForm">
           <div class="form-group">
-            <label for="apiKey">API Key</label>
-            <input type="text" id="apiKey" name="apiKey" value="">
+            <label for="api_key">API Key</label>
+            <input type="text" id="api_key" name="api_key" value="">
           </div>
           <div class="form-group">
             <label for="MapsToShow">Maps To Show</label>
-            <select id="MapsToShow" name="MapsToShow">
+            <select id="MapsToShow" name="maps_to_show">
               <option>1</option><option>2</option><option>3</option>
               <option>4</option><option>5</option><option>6</option>
               <option>7</option><option>8</option><option>9</option>
@@ -118,15 +133,15 @@
           </div>
           <div class="form-group">
             <label for="Start_Date">Start Date</label>
-            <input type="date" id="Start_Date" name="Start_Date" value="2001-10-02">
+            <input type="date" id="Start_Date" name="start_date" value="2001-10-02">
           </div>
           <div class="form-group">
-            <label for="End_Date">End Date</label>
-            <input type="date" id="End_Date" name="End_Date" value="2040-10-02">
+            <label for="DaysToShow">Days to Show</label>
+            <input type="number" id="DaysToShow" name="days_to_show" value="7" min="1" max="365">
           </div>
           <div class="form-group">
             <label for="OnlyMapsContaining">Only Maps Containing</label>
-            <input type="text" id="OnlyMapsContaining" name="OnlyMapsContaining" value="dr_">
+            <input type="text" id="OnlyMapsContaining" name="only_maps_containing" value="dr_">
           </div>
           <div class="form-group" id="fastWriteGroup">
             <label for="FastWriteDelay">Fast Write Delay (min)</label>
@@ -138,7 +153,7 @@
           </div>
           <div class="form-group">
             <label for="ColorIntensity">Color Intensity</label>
-            <input type="number" id="ColorIntensity" name="ColorIntensity" value="3">
+            <input type="number" id="ColorIntensity" name="color_intensity" value="3">
           </div>
           <div class="form-group">
             <label for="Game">Game</label>
@@ -168,375 +183,10 @@
         <strong>SourceMapStats</strong> — queries the Steam Master Server,
         aggregates player counts per map, and renders the results.
       </p>
-      <p class="copyright">© Ultikynnys 2025</p>
+      <p class="copyright"> Ultikynnys 2025</p>
     </div>
   </footer>
 
-  <script>
-    /* Helper utilities */
-    function createThrottledFunction(fn, delay) {
-      let last = 0;
-      return (...args) => {
-        const now = Date.now();
-        if (now - last >= delay) {
-          last = now;
-          fn(...args);
-        }
-      };
-    }
-    function setAllButtonsDisabled(disabled) {
-      document.querySelectorAll("button").forEach(btn => btn.disabled = disabled);
-    }
-    function sanitizeApiKey(key) {
-      return key.replace(/[^a-zA-Z0-9-_]/g,'');
-    }
-    function hasValidApiKey(key) {
-      return key && key.length >= 10;
-    }
-
-    /* Fetch wrapper */
-    async function doFetch(url, options = {}) {
-      options.headers = options.headers || {};
-      const rawKey = document.getElementById('apiKey').value || '';
-      const key = sanitizeApiKey(rawKey);
-      if (hasValidApiKey(key)) options.headers['X-API-KEY'] = key;
-
-      const res = await fetch(url, options);
-      if (res.status === 429) {
-        const d = await res.json().catch(() => ({}));
-        const cd = d.cooldown || 1;
-        alert(`Rate limited — cool-down ${cd}s`);
-        setAllButtonsDisabled(true);
-        setTimeout(() => setAllButtonsDisabled(false), cd * 1000);
-        throw new Error('Rate limited');
-      }
-      if (res.status === 401) {
-        document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
-        throw new Error('Unauthorized');
-      }
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        alert(d.error || `HTTP ${res.status}`);
-        throw new Error('HTTP error');
-      }
-      return res.json();
-    }
-
-    /* API-key UI */
-    let statusInterval = null;
-    async function validateApiKey(key) {
-      if (!hasValidApiKey(key)) return false;
-      try {
-        const res = await fetch('/api/validate_key', { cache: 'no-store', headers: { 'X-API-KEY': key } });
-        return res.ok;
-      } catch { return false; }
-    }
-    function toggleExtraParams(show) {
-      document.getElementById('fastWriteGroup').style.display = show ? 'flex' : 'none';
-      document.getElementById('runtimeMinutesGroup').style.display = show ? 'flex' : 'none';
-    }
-    async function checkApiKeyState() {
-      const elem = document.getElementById('apiKey');
-      const raw = elem.value;
-      const key = sanitizeApiKey(raw);
-      if (raw !== key) elem.value = key;
-      if (!hasValidApiKey(key)) {
-        document.getElementById('apiKeyState').textContent =
-          'API Key State: Not supplied — chart-only mode';
-        document.getElementById('startScan').style.display = 'none';
-        document.getElementById('stopScan').style.display = 'none';
-        toggleExtraParams(false);
-        if (statusInterval) clearInterval(statusInterval), statusInterval = null;
-        return;
-      }
-      const valid = await validateApiKey(key);
-      if (!valid) {
-        document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
-        document.getElementById('startScan').style.display = 'none';
-        document.getElementById('stopScan').style.display = 'none';
-        toggleExtraParams(false);
-        if (statusInterval) clearInterval(statusInterval), statusInterval = null;
-        return;
-      }
-      document.getElementById('apiKeyState').textContent = 'API Key State: Valid';
-      document.getElementById('startScan').style.display = 'inline-block';
-      document.getElementById('stopScan').style.display = 'inline-block';
-      toggleExtraParams(true);
-      if (!statusInterval) {
-        statusInterval = setInterval(() => refreshStatus().catch(() => {}), 1000);
-      }
-    }
-
-    /* Connection heartbeat */
-    async function updateConnectionStatus() {
-    const el = document.getElementById('connectionStatus');
-    try {
-      const d = await fetch('/api/heartbeat', { cache: 'no-store' })
-        .then(r => { if (!r.ok) throw ''; return r.json(); });
-      el.textContent = 'Connected';
-      el.classList.replace('disconnected', 'connected');
-      document.getElementById('requestsLeft').textContent =
-        `Requests Left: ${d.requests_left}`;
-    } catch {
-      el.textContent = 'No server found';
-      el.classList.replace('connected', 'disconnected');
-    }
-  }
-
-    setInterval(updateConnectionStatus, 5000);
-
-    /* CSV status */
-    async function checkCSVStatus() {
-      try {
-        const d = await doFetch('/api/csv_status');
-        document.getElementById('refreshChart').disabled = !(d.exists && !d.empty);
-      } catch {}
-    }
-
-    /* Scan controls */
-    async function startScanning() {
-      const key = sanitizeApiKey(document.getElementById('apiKey').value);
-      if (!hasValidApiKey(key)) { alert('API key must be at least 10 characters.'); return; }
-      try {
-        const res = await doFetch('/api/start_scan', { method: 'POST' });
-        alert(res.status || res.error);
-      } catch {}
-    }
-    async function stopScanning() {
-      const key = sanitizeApiKey(document.getElementById('apiKey').value);
-      if (!hasValidApiKey(key)) { alert('API key must be at least 10 characters.'); return; }
-      try {
-        const res = await doFetch('/api/stop_scan', { method: 'POST' });
-        alert(res.status || res.error);
-      } catch {}
-    }
-
-    /* Status polling */
-    async function refreshStatus() {
-      try {
-        const s = await doFetch('/api/status');
-        document.getElementById('scanningStatus').textContent =
-          `Scanning Status: ${s.scanning_status || 'Idle'}`;
-        document.getElementById('scanningMode').textContent =
-          `Scanning Mode: ${s.scanning_mode || 'None'}`;
-        document.getElementById('currentIP').textContent =
-          `Current IP: ${s.current_scanned_ip || 'None'}`;
-        document.getElementById('lastError').textContent =
-          `Last Error: ${s.last_error || 'None'}`;
-        document.getElementById('errorCount').textContent =
-           `Error Count: ${s.error_count || 0}`;
-      } catch {}
-    }
-
-    /* Fetch chart data */
-    async function fetchData() {
-      return doFetch('/api/data');
-    }
-
-    function renderChart(data) {
-  // ── 0) Always normalize every day's percentages to exactly 100% ─────────
-  data.labels.forEach((_, idx) => {
-    // sum of all series at this day
-    const sumAll = data.datasets.reduce((acc, ds) => acc + (ds.data[idx] || 0), 0);
-    // how far off from 100 we are
-    const diff = Math.round((100 - sumAll) * 100) / 100;
-    if (Math.abs(diff) > 1e-6) {
-      // try to fold into "Other maps"; if missing, use last dataset
-      const otherIndex = data.datasets.findIndex(ds => ds.label === 'Other maps');
-      const targetDs = otherIndex >= 0
-        ? data.datasets[otherIndex]
-        : data.datasets[data.datasets.length - 1];
-      // apply the tiny adjustment
-      targetDs.data[idx] = Math.round((targetDs.data[idx] + diff) * 100) / 100;
-    }
-  });
-
-  // ── 1) Sanity check per day ───────────────────────────────────────────────
-  const errors = [];
-  data.labels.forEach((day, i) => {
-    const sumAll = data.datasets.reduce((acc, ds) => acc + (ds.data[i] || 0), 0);
-    const rounded = Math.round(sumAll * 100) / 100;
-    if (Math.abs(rounded - 100) > 0.01) {
-      errors.push(`Date ${day}: sum = ${rounded}%, expected 100%`);
-    }
-  });
-  const errorEl = document.getElementById('dataErrors');
-  errorEl.innerHTML = errors.map(e => `<p>${e}</p>`).join('');
-  if (errors.length) console.error('Sanity check failed:', errors);
-
-  // ── 2) Update ranking list ───────────────────────────────────────────────
-  document.getElementById('mapRanking').innerHTML =
-    data.ranking.map((m, idx) => {
-      const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '';
-      return `<li>${medal}${m.label}<span class="rank-pct">(${m.pop}%)</span></li>`;
-    }).join('');
-
-  // ── 3) Compute y-axis bounds ─────────────────────────────────────────────
-  const allPct = data.datasets
-    .filter(ds => ds.label !== 'Other maps')
-    .flatMap(ds => ds.data);
-  const minPct = Math.min(...allPct), maxPct = Math.max(...allPct);
-
-  // ── 4) Share-of-day line chart ────────────────────────────────────────────
-  const ctx = document.getElementById('chartCanvas').getContext('2d');
-  if (window.myChart) window.myChart.destroy();
-  window.myChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels: data.labels, datasets: data.datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        tooltip: {
-          mode: 'index',
-          intersect: false,
-          callbacks: {
-            label: ctx => {
-              const i = ctx.dataIndex;
-              const val = ctx.dataset.data[i] || 0;
-              const tot = ctx.chart.data.datasets
-                .reduce((s, d) => s + (d.data[i] || 0), 0);
-              return `${ctx.dataset.label}: ${(tot ? val / tot * 100 : 0).toFixed(2)}%`;
-            }
-          },
-          itemSort: (a, b) => {
-            if (a.dataset.label === 'Other maps') return 1;
-            if (b.dataset.label === 'Other maps') return -1;
-            return b.parsed.y - a.parsed.y;
-          }
-        },
-        legend: {
-          position: 'bottom',
-          labels: {
-            color: 'white',
-            generateLabels: chart => {
-              const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-              const idxO = labels.findIndex(l => l.text === 'Other maps');
-              let other = null;
-              if (idxO !== -1) other = labels.splice(idxO, 1)[0];
-              labels.sort((a, b) => {
-                const da = chart.data.datasets[a.datasetIndex].data;
-                const db = chart.data.datasets[b.datasetIndex].data;
-                return (db[db.length - 1] || 0) - (da[da.length - 1] || 0);
-              });
-              if (other) labels.push(other);
-              return labels;
-            }
-          }
-        },
-        title: {
-          display: true,
-          text: `Top ${data.shownMapsCount} Maps (share per day %)`,
-          color: 'white'
-        }
-      },
-      scales: {
-        x: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } },
-        y: {
-          min: minPct,
-          max: maxPct,
-          ticks: { color: 'white', callback: v => v + '%' },
-          grid: { color: 'rgba(255,255,255,0.2)' }
-        }
-      }
-    }
-  });
-
-  // ── 5) Daily Avg Players ─────────────────────────────────────────────────
-  const avgCtx = document.getElementById('avgChartCanvas').getContext('2d');
-  if (window.avgChart) window.avgChart.destroy();
-  window.avgChart = new Chart(avgCtx, {
-    type: 'line',
-    data: {
-      labels: data.labels,
-      datasets: [{
-        label: 'Daily Avg Players',
-        data: data.dailyTotals,
-        borderColor: 'white',
-        fill: false
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { color: 'white' } },
-        title: { display: true, text: 'Daily Avg Players', color: 'white' }
-      },
-      scales: {
-        x: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } },
-        y: { beginAtZero: true, ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } }
-      }
-    }
-  });
-
-  // ── 6) Snapshots-per-Day ──────────────────────────────────────────────────
-  const snapCtx = document.getElementById('snapshotChartCanvas').getContext('2d');
-  if (window.snapChart) window.snapChart.destroy();
-  window.snapChart = new Chart(snapCtx, {
-    type: 'bar',
-    data: {
-      labels: data.labels,
-      datasets: [{
-        label: 'Snapshots per Day',
-        data: data.snapshotCounts,
-        borderColor: 'white',
-        backgroundColor: 'rgba(255,255,255,0.2)'
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        title: { display: true, text: 'Snapshots per Day', color: 'white' }
-      },
-      scales: {
-        x: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } },
-        y: { beginAtZero: true, ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } }
-      }
-    }
-  });
-
-  // ── 7) Text summary ───────────────────────────────────────────────────────
-  const avgCount = data.averageDailyPlayerCount.toFixed(1);
-  document.getElementById('playerCountDisplay').textContent =
-    `Average player count (${document.getElementById('OnlyMapsContaining').value}): ${avgCount}`;
-}
-
-    /* Throttled chart update */
-    const updateChart = createThrottledFunction(async () => {
-      const fd = new FormData(document.getElementById('paramsForm'));
-      const obj = {};
-      fd.forEach((v, k) => { if (k !== 'apiKey') obj[k] = v; });
-      await doFetch('/api/update_params', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(obj)
-      });
-      await checkCSVStatus();
-      const chartData = await fetchData();
-      if (!chartData.labels.length) {
-        alert('No chart data found — CSV empty or out of date range.');
-        return;
-      }
-      renderChart(chartData);
-    }, 1000);
-
-    /* Initialization & event bindings */
-    document.addEventListener('DOMContentLoaded', async () => {
-      updateConnectionStatus();
-      await checkApiKeyState();
-      await checkCSVStatus();
-      await refreshStatus();
-      await updateChart();
-    });
-    document.getElementById('refreshChart').addEventListener('click', updateChart);
-    document.getElementById('startScan').addEventListener('click', startScanning);
-    document.getElementById('stopScan').addEventListener('click', stopScanning);
-    document.getElementById('refreshStatus').addEventListener('click', refreshStatus);
-    document.getElementById('apiKey').addEventListener('input', () => checkApiKeyState().catch(() => {}));
-  </script>
+  <script src="/static/main.js"></script>
 </body>
 </html>
