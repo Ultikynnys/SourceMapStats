@@ -250,8 +250,6 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     daily_snapshots_df = df.groupby('date')['snapshot_id'].nunique()
     snapshot_counts = daily_snapshots_df.reindex(date_range.date, fill_value=0).tolist()
 
-    average_daily_player_count = sum(daily_totals) / len(daily_totals) if daily_totals else 0
-
     # --- Ranking Calculation (based on average daily players) ---
     map_daily_avg = merged_df.groupby('map')['avg_players'].mean()
     total_daily_avg_sum = map_daily_avg.sum()
@@ -281,7 +279,6 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
         'snapshotCounts': snapshot_counts,
         'ranking': ranking,
         'shownMapsCount': len(top_maps),
-        'averageDailyPlayerCount': average_daily_player_count,
     }
 
     g_chart_data_cache[cache_key] = {'timestamp': time.time(), 'data': result}
