@@ -43,6 +43,8 @@ g_chart_data_cache = {}
 
 # ─── flask app ────────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder='static')
+# Disable caching of static files to ensure the browser always gets the latest version.
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 
 @app.route('/favicon.ico')
 def favicon():
@@ -131,383 +133,183 @@ def get_color(i: int, total: int, intensity: int) -> str:
     r = int((math.sin(ang) + 1) / 2 * 255)
     g = int((math.sin(ang + 2 * math.pi / 3) + 1) / 2 * 255)
     b = int((math.sin(ang + 4 * math.pi / 3) + 1) / 2 * 255)
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-def is_ip_address(ip: str) -> bool:
-    return re.match(r"^(([0-1]?\d?\d|2[0-4]\d|25[0-5])\.){3}"
-                    r"([0-1]?\d?\d|2[0-4]\d|25[0-5])$", ip) is not None
-
-def get_country(ip: str) -> str:
-    try:
-        reader = geoip2.database.Reader(GeoLite2CityPath)
-        response = reader.city(ip)
-        return response.country.name
-    except geoip2.errors.AddressNotFoundError:
-        return "Unknown"
-    except Exception as e:
-        logging.error(f"GeoIP error: {e}")
-        return "Unknown"
-
-# ─── per-IP adaptive timeouts ────────────────────────────────────────────────
-IP_TIMEOUTS_FILE = os.path.join(BASE_DIR, 'ip_timeouts.json')
-try:
-    with open(IP_TIMEOUTS_FILE, 'r') as f:
-        ip_timeouts = {ip: float(t) for ip, t in _json.load(f).items()}
-except FileNotFoundError:
-    ip_timeouts = {}
-
-def save_timeouts():
-    with open(IP_TIMEOUTS_FILE, 'w') as f:
-        _json.dump(ip_timeouts, f)
-
-# ─── data-processing functions ────────────────────────────────────────────────
-def RawData():
-    """Memoized, thread-safe CSV data loader."""
-    rawfile = os.path.join(BASE_DIR, config["Filename"])
-    if not os.path.exists(rawfile):
-        logging.warning(f"Raw data file not found: {rawfile}")
-        return []
-    try:
-        with open(rawfile, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            # Filter out empty rows that might exist in the CSV
-            rows = [row for row in reader if row]
-        return rows
-    except (IOError, csv.Error) as e:
-        logging.error(f"Error reading raw data file: {e}")
-        return []
-
-def get_date_range():
-    """Reads the CSV and returns the min and max dates found."""
-    path = os.path.join(BASE_DIR, config["Filename"])
-    if not os.path.exists(path) or os.path.getsize(path) == 0:
-        return {"min_date": None, "max_date": None}
-
-    try:
-        # Use pandas to efficiently read only the timestamp column
-        df = pd.read_csv(path, usecols=[4], header=None, names=['timestamp'])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], format=ReaderTimeFormat, errors='coerce')
-        df.dropna(inplace=True)
-
-        if df.empty:
-            return {"min_date": None, "max_date": None}
-
-        min_date = df['timestamp'].min().strftime('%Y-%m-%d')
-        max_date = df['timestamp'].max().strftime('%Y-%m-%d')
-        
-        logging.info(f"Calculated date range: {min_date} to {max_date}")
-        return {"min_date": min_date, "max_date": max_date}
-    except Exception as e:
-        logging.error(f"Error getting date range: {e}")
-        return {"min_date": None, "max_date": None}
-
-def get_data_freshness():
-    """Returns the last modification time of the CSV file."""
-    path = os.path.join(BASE_DIR, config["Filename"])
-    if not os.path.exists(path):
-        return None
-    try:
-        mtime = os.path.getmtime(path)
-        return datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
-    except OSError:
-        return None
-
 def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent):
-    logging.info("--- Starting get_chart_data ---")
-    global g_chart_data_cache
-
-    # Ensure parameters have correct types for cache key and logic
-    days_to_show = int(days_to_show)
-    maps_to_show = int(maps_to_show)
-    percision = int(percision)
-    color_intensity = int(color_intensity)
-    bias_exponent = float(bias_exponent)
-    # Use tuple for hashability
-    only_maps_containing_tuple = tuple(sorted(only_maps_containing))
-
-    file_mod_time = os.path.getmtime(config["Filename"]) if os.path.exists(config["Filename"]) else 0
-    cache_key = (file_mod_time, start_date_str, days_to_show, only_maps_containing_tuple, maps_to_show, percision, bias_exponent)
-
-    # Return cached result if available
-    if cache_key in g_chart_data_cache:
-        logging.info("Returning cached chart data.")
-        return g_chart_data_cache[cache_key]
+    """Processes the raw CSV data to generate data for the charts."""
+    cache_key = (start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent)
     
-    logging.info(f"Cache miss. Processing data for key: {cache_key}")
+    cached_result = g_chart_data_cache.get(cache_key)
+    if cached_result and (time.time() - cached_result['timestamp']) < CACHE_EXPIRY_SECONDS:
+        logging.info("Returning cached chart data.")
+        return cached_result['data']
 
-    # Get raw data and convert to DataFrame
-    rows = RawData()
-    if not rows:
-        logging.warning("RawData is empty. Returning empty chart data.")
-        result = {"labels": [], "datasets": [], "ranking": [], "averageDailyPlayerCount": 0, "totalPlayers": 0, "dailyTotals": [], "snapshotCounts": [], "shownMapsCount": 0, "totalFilteredMaps": 0}
-        g_chart_data_cache[cache_key] = result
-        return result
+    logging.info("Generating new chart data...")
 
-    # Normalize rows to handle mixed legacy and modern data formats.
-    processed_rows = []
-    for i, row in enumerate(rows):
-        num_cols = len(row)
-        if num_cols == 7:  # Modern format: [ip, port, map, players, timestamp, unknown, snapshot_id]
-            processed_rows.append(row)
-        elif num_cols == 6:  # Legacy format with 'unknown' field
-            processed_rows.append(row + [f'unknown_{i}'])
-        elif num_cols == 5:  # Older legacy format
-            processed_rows.append(row + ['0', f'unknown_{i}'])
-        else:
-            logging.warning(f"Skipping malformed row with {num_cols} columns: {row}")
+    try:
+        df = pd.read_csv(RAW_FILE, names=['ip', 'port', 'map', 'players', 'timestamp', 'country_code', 'snapshot_id'])
+    except FileNotFoundError:
+        logging.error(f"Data file not found: {RAW_FILE}")
+        return {'labels': [], 'datasets': [], 'total_player_count': 0, 'total_server_count': 0, 'snapshot_count': 0, 'map_ranking': []}
 
-    if not processed_rows:
-        logging.warning("No valid rows found after processing. Returning empty chart data.")
-        result = {"labels": [], "datasets": [], "ranking": [], "averageDailyPlayerCount": 0, "totalPlayers": 0, "dailyTotals": [], "snapshotCounts": [], "shownMapsCount": 0, "totalFilteredMaps": 0}
-        g_chart_data_cache[cache_key] = result
-        return result
-
-    df = pd.DataFrame(processed_rows, columns=['ip', 'port', 'map', 'players', 'timestamp', 'unknown', 'snapshot_id'])
-    logging.info(f"Loaded {len(df)} rows into DataFrame from CSV.")
+    # --- Data Cleaning and Normalization ---
     df['players'] = pd.to_numeric(df['players'], errors='coerce').fillna(0).astype(int)
     df['timestamp'] = pd.to_datetime(df['timestamp'], format=ReaderTimeFormat, errors='coerce')
     df.dropna(subset=['timestamp'], inplace=True)
-    logging.info(f"DataFrame size after cleaning and type conversion: {len(df)}")
 
-    if df.empty:
-        logging.warning("DataFrame is empty after initial processing. Aborting.")
-        return {
-            'labels': [], 'datasets': [], 'ranking': [], 'averageDailyPlayerCount': 0,
-            'daily_avg_players': {'data': [], 'labels': []}, 'snapshots_per_day': {'data': [], 'labels': []}
-        }
-
-    # Filter by date range
-    logging.info(f"Filtering by date. Start_Date: {start_date_str}, DaysToShow: {days_to_show}")
+    max_date_in_data = df['timestamp'].max()
     start_date = pd.to_datetime(start_date_str)
+
+    if pd.isna(max_date_in_data) or (max_date_in_data - start_date).days > 30:
+        if not pd.isna(max_date_in_data):
+             logging.warning(f"Stale start_date '{start_date.date()}' detected. Defaulting to last {days_to_show} days from max date '{max_date_in_data.date()}'.")
+        start_date = (max_date_in_data if not pd.isna(max_date_in_data) else datetime.now()) - pd.Timedelta(days=days_to_show)
+
     end_date = start_date + pd.Timedelta(days=int(days_to_show))
-    logging.info(f"Calculated date range for filtering: {start_date.date()} to {end_date.date()}")
-    logging.info(f"Filtering from {start_date} to {end_date}")
+    logging.info(f"Filtering data from {start_date.date()} to {end_date.date()}")
     df = df[(df['timestamp'] >= start_date) & (df['timestamp'] < end_date)].copy()
-    logging.info(f"DataFrame size after date filtering: {len(df)}")
 
     if df.empty:
-        logging.warning("DataFrame is empty after date filtering. Returning empty dataset.")
-        return {
-            "labels": [],
-            "datasets": [],
-            "ranking": [],
-            "averageDailyPlayerCount": 0,
-            "totalPlayers": 0,
-            "dailyTotals": [],
-            "snapshotCounts": [],
-            "shownMapsCount": 0,
-            "totalFilteredMaps": 0
-        }
+        logging.warning("No data available for the selected date range.")
+        return {'labels': [], 'datasets': [], 'total_player_count': 0, 'total_server_count': 0, 'snapshot_count': 0, 'map_ranking': []}
 
-    # This is a bug fix. The original code referenced a non-existent 'WordFilter' config key.
-    # We will now use the 'map' column directly for filtering and aggregation.
-    df['map_clean'] = df['map'].str.strip()
-    
-    # Filter by map names if specified
-    if only_maps_containing:
-        logging.info(f"Filtering with map name patterns: {only_maps_containing}")
-        # Create a regex pattern from the list of substrings.
-        # This will match any map_clean that contains any of the provided substrings.
-        # The pattern is a simple OR of all substrings.
-        pattern = '|'.join(re.escape(s) for s in only_maps_containing)
-        logging.info(f"Using regex pattern for map filtering: '{pattern}'")
-        logging.info(f"Sample map_clean values before filtering: {df['map_clean'].unique()[:5]}")
-        df = df[df['map_clean'].str.contains(pattern, case=False, na=False)].copy()
-    logging.info(f"DataFrame size after map name filtering: {len(df)}")
+    # --- Data Aggregation ---
+    df['date'] = df['timestamp'].dt.date
+    daily_player_sum = df.groupby(['date', 'map'])['players'].sum().reset_index()
+    daily_snapshot_count = df.groupby(['date', 'map'])['snapshot_id'].nunique().reset_index()
+    daily_snapshot_count.rename(columns={'snapshot_id': 'unique_snapshots'}, inplace=True)
 
-    if df.empty:
-        logging.warning("DataFrame is empty after all filters. Returning empty chart data.")
-        return {
-            "labels": [],
-            "datasets": [],
-            "ranking": [],
-            "averageDailyPlayerCount": 0,
-            "totalPlayers": 0,
-            "dailyTotals": [],
-            "snapshotCounts": [],
-            "shownMapsCount": 0,
-            "totalFilteredMaps": 0
-        }
+    merged_df = pd.merge(daily_player_sum, daily_snapshot_count, on=['date', 'map'])
+    merged_df['avg_players'] = merged_df['players'] / merged_df['unique_snapshots']
 
-    logging.info("DataFrame has data. Proceeding with aggregations.")
-    # --- Aggregations (Definitive Final) ---
-    df['day'] = df['timestamp'].dt.normalize()
+    # --- Chart Dataset Preparation ---
+    all_maps = merged_df['map'].unique()
+    top_maps = merged_df.groupby('map')['avg_players'].mean().nlargest(maps_to_show).index
 
-    # 1. Calculate the average player count per map for each day. Used for ranking and the percentage chart's numerators.
-    daily_avg_map_players = df.groupby(['day', 'map_clean'])['players'].mean().unstack(fill_value=0)
-
-    # 2. Calculate the denominator for the percentage chart. This is the sum of per-map daily averages.
-    # This calculation method is what guarantees the percentages for each day will sum to 100.
-    daily_total_for_chart_denominator = daily_avg_map_players.sum(axis=1)
-
-    # 3. Calculate the intuitive daily total for the raw player count chart.
-    # This is the average of the total players summed across all maps for each snapshot within a day.
-    # This gives a clear "average total players online" metric for each day.
-    intuitive_daily_totals = df.groupby(['day', 'snapshot_id'])['players'].sum(numeric_only=True).groupby('day').mean()
-
-    # 4. Calculate snapshot counts per day for weighting the ranking table.
-    snapshot_counts = df.groupby('day')['snapshot_id'].nunique()
-
-    # 5. Calculate the main KPI: the average players per snapshot over the entire filtered period.
-    total_players_sum = df['players'].sum()
-    total_snapshots = df['snapshot_id'].nunique()
-    avg_daily_kpi = float(round(total_players_sum / total_snapshots, percision)) if total_snapshots > 0 else 0.0
-
-    # --- Weighted Averages & Ranking ---
-    # Use the denominator's index for labels, as it covers all days with activity.
-    labels_dt = sorted(daily_total_for_chart_denominator.index.tolist())
-    raw_weights = {d: (snapshot_counts.get(d, 0) ** bias_exponent) for d in labels_dt}
-    total_weight = sum(raw_weights.values()) or 1
-
-    # 6. Calculate the overall weighted average player count for *each map* for the ranking table.
-    daily_avg_dict = daily_avg_map_players.to_dict('index')
-    map_weighted = {}
-    for d in labels_dt:
-        w = raw_weights.get(d, 0) / total_weight
-        if d in daily_avg_dict:
-            for m, day_avg in daily_avg_dict[d].items():
-                map_weighted[m] = map_weighted.get(m, 0) + day_avg * w
-
-    map_avg = {m: 0.0 if math.isnan(v) else float(round(v, percision)) for m, v in map_weighted.items()}
-    top_maps = sorted(map_avg, key=map_avg.get, reverse=True)[:maps_to_show]
-    
-    total_avg_all = float(sum(map_avg.values())) or 1.0
-    ranking = [{"label": m, "avg": map_avg[m], "pop": float(round(map_avg[m] / total_avg_all * 100, percision))} for m in top_maps]
-
-    # --- Chart Datasets ---
     datasets = []
-    for idx, m in enumerate(top_maps):
-        data = []
-        for d in labels_dt:
-            daily_avg_for_map = daily_avg_dict.get(d, {}).get(m, 0)
-            # Use the chart-specific total as the denominator.
-            denominator = daily_total_for_chart_denominator.get(d, 1)
-            percent = float(round(daily_avg_for_map / denominator * 100, percision)) if denominator > 0 else 0.0
-            data.append(percent)
-        datasets.append({"label": m, "data": data, "borderColor": get_color(idx, len(top_maps)+1, color_intensity), "fill": False})
+    for map_name in top_maps:
+        map_data = merged_df[merged_df['map'] == map_name]
+        datasets.append({
+            'label': map_name,
+            'data': list(map_data.set_index('date')['avg_players'].reindex(pd.date_range(start=start_date.date(), end=end_date.date() - pd.Timedelta(days=1)), fill_value=0)),
+            'backgroundColor': f'rgba({(hash(map_name) & 0xFF)}, {(hash(map_name) >> 8) & 0xFF}, {(hash(map_name) >> 16) & 0xFF}, {color_intensity})',
+            'borderColor': f'rgba({(hash(map_name) & 0xFF)}, {(hash(map_name) >> 8) & 0xFF}, {(hash(map_name) >> 16) & 0xFF}, 1)',
+            'borderWidth': 1
+        })
 
-    # "Other maps" calculation also uses the chart-specific total.
-    if len(map_avg) > len(top_maps):
-        others_data = []
-        for d in labels_dt:
-            denominator = daily_total_for_chart_denominator.get(d, 1)
-            if denominator > 0:
-                sum_of_top_maps_avg = sum(daily_avg_dict.get(d, {}).get(m, 0) for m in top_maps)
-                rem_avg = max(denominator - sum_of_top_maps_avg, 0)
-                others_data.append(float(round(rem_avg / denominator * 100, percision)))
-            else:
-                others_data.append(0.0)
-        datasets.append({"label": "Other maps", "data": others_data, "borderColor": "#888888", "fill": False})
+    other_maps_df = merged_df[~merged_df['map'].isin(top_maps)]
+    if not other_maps_df.empty:
+        other_data = other_maps_df.groupby('date')['avg_players'].sum().reindex(pd.date_range(start=start_date.date(), end=end_date.date() - pd.Timedelta(days=1)), fill_value=0)
+        datasets.append({
+            'label': 'Other',
+            'data': list(other_data),
+            'backgroundColor': f'rgba(128, 128, 128, {color_intensity})',
+            'borderColor': 'rgba(128, 128, 128, 1)',
+            'borderWidth': 1
+        })
+
+    # --- Final KPIs and Rankings ---
+    total_player_count = int(df['players'].sum())
+    total_server_count = len(df.groupby(['ip', 'port']))
+    snapshot_count = df['snapshot_id'].nunique()
+
+    map_ranking = df.groupby('map')['players'].sum().sort_values(ascending=False).reset_index()
+    map_ranking['rank'] = map_ranking['players'].rank(method='dense', ascending=False).astype(int)
 
     result = {
-        "labels": [d.strftime('%Y-%m-%d') for d in labels_dt],
-        "datasets": datasets,
-        "ranking": ranking,
-        "averageDailyPlayerCount": avg_daily_kpi,
-        "totalPlayers": float(round(total_avg_all, percision)),
-        "dailyTotals": [float(round(intuitive_daily_totals.get(d, 0), 1)) for d in labels_dt],
-        "snapshotCounts": [int(snapshot_counts.get(d, 0)) for d in labels_dt],
-        "shownMapsCount": len(top_maps),
-        "totalFilteredMaps": len(map_avg)
+        'labels': [d.strftime('%Y-%m-%d') for d in pd.date_range(start=start_date.date(), end=end_date.date() - pd.Timedelta(days=1))],
+        'datasets': datasets,
+        'total_player_count': total_player_count,
+        'total_server_count': total_server_count,
+        'snapshot_count': snapshot_count,
+        'map_ranking': map_ranking.to_dict('records')
     }
-    
-    g_chart_data_cache[cache_key] = result
-    logging.info("--- Finished get_chart_data ---")
+
+    g_chart_data_cache[cache_key] = {'timestamp': time.time(), 'data': result}
     return result
 
+# --- Backend Scanner ---
 
+config = {
+    "servertimeout": 0.4,
+}
 
+ip_timeouts = {}
+MAX_SINGLE_IP_TIMEOUT = 3.0
 
 def IpReader(ip):
-    """Query single game server, return CSV row or None,
-       with adaptive per-IP timeouts."""
+    """Query single game server, return CSV row or None."""
     ip_str, port = ip
     timeout = ip_timeouts.get(ip_str, config["servertimeout"])
 
     try:
-        # Use a2s to query the server
         info = a2s.info(ip, timeout=timeout)
-
-        # Process map name: remove newlines, control chars, trailing spaces
         map_name = re.sub(r'[\r\n\x00-\x1F\x7F-\x9F]', '', info.map_name).strip()
-
-        # Get current timestamp
         timestamp = datetime.now().strftime(ReaderTimeFormat)
-
-        # Update timeout for this IP based on success
-        ip_timeouts[ip_str] = max(0.1, timeout * 0.9)  # Decrease timeout
-
-        # Return the data as a list of strings
-        return [ip_str, str(port), map_name, str(info.player_count), timestamp, '0']
+        ip_timeouts[ip_str] = max(0.1, timeout * 0.9)
+        return [ip_str, str(port), map_name, str(info.player_count), timestamp]
 
     except (socket.timeout, ConnectionResetError):
         logging.warning(f"Timeout/Reset for {ip_str}:{port}")
-        # Increase timeout for this IP on failure
         ip_timeouts[ip_str] = min(MAX_SINGLE_IP_TIMEOUT, timeout * 1.5)
         return None
     except Exception as e:
         logging.warning(f"Error for {ip_str}:{port}: {str(e)}")
-        # You might want to handle timeouts differently for other errors
         return None
 
-def SlowScan():
-    ips = []
-    try:
-        with master_server.MasterServerQuerier(timeout=config["timeout_master"]) as msq:
-            ips = list(msq.find(
-                gamedir=config["Game"], empty=True,
-                secure=True, region=config["regionserver"]
-            ))
-    except Exception as e:
-        last_error_message = f"Master server: {e}"
-    return ips
-
-def CSVWriter(rows, rawfile):
-    if not rows:
-        return
-
-    # Append to the CSV, creating it if it doesn't exist.
-    idx = int(time.time())
-    with open(rawfile, 'a', newline='', encoding='utf-8') as f:
-        w = csv.writer(f)
-        for r in rows:
-            w.writerow(r + [str(idx)])
-
-def scan_loop():
-    logging.info("--- Starting scan_loop ---")
-    rawfile = os.path.join(BASE_DIR, config["Filename"])
-
-    while True:  # Main loop
-        all_ips = SlowScan()
-        logging.info(f"SlowScan found {len(all_ips)} IPs")
-
-        if not all_ips:
-            logging.warning("Initial master server query failed. Retrying in 60s.")
-            time.sleep(60)
-            continue
-
-        snapshot_id = datetime.now().strftime("%Y%m%d%H%M%S")
-        all_server_data = IpReaderMulti(all_ips, snapshot_id)
-        logging.info(f"IpReaderMulti got {len(all_server_data)} rows")
-
-        if all_server_data:
-            CSVWriter(all_server_data, rawfile)
-
-        # Wait before the next full scan
-        logging.info("Scan finished, sleeping for 5 minutes.")
-        time.sleep(300)
-
 def IpReaderMulti(lst, snapshot_id):
+    """Process a list of IPs and append a snapshot_id."""
     out = []
     total = len(lst)
     for i, ip in enumerate(lst, 1):
-        logging.info(f"Querying IP {i}/{total}: {ip[0]}:{ip[1]}")
+        # logging.info(f"Querying IP {i}/{total}: {ip[0]}:{ip[1]}") # This is too verbose
         row = IpReader(ip)
         if row:
             out.append(row + [snapshot_id])
     return out
 
-# Import and register routes from external module
+def write_to_csv(rows):
+    """Appends rows to the master CSV file in the correct 7-column format."""
+    if not rows:
+        return
+
+    with open(RAW_FILE, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        for row in rows:
+            # row from IpReaderMulti is [ip, port, map, players, timestamp, snapshot_id]
+            country_code = get_country(row[0])
+            row.insert(5, country_code) # Final format: [ip, port, map, players, timestamp, country_code, snapshot_id]
+            writer.writerow(row)
+
+def get_server_list():
+    """Fetches the server list from the Valve master server."""
+    master_server = ('hl2master.steampowered.com', 27011)
+    all_servers = []
+    try:
+        all_servers = list(a2s.find_server(master_server, filter='\gamedir\tf'))
+        logging.info(f"Fetched {len(all_servers)} servers from master server.")
+    except Exception as e:
+        logging.error(f"Failed to fetch server list from master server: {e}")
+    return all_servers
+
+def scan_loop():
+    """The main loop for continuously scanning servers."""
+    logging.info("--- Starting scan_loop ---")
+    while True:
+        snapshot_id = datetime.now().strftime('%Y%m%d%H%M%S')
+        logging.info(f"Starting new scan cycle with snapshot_id: {snapshot_id}")
+        
+        server_list = get_server_list()
+        if not server_list:
+            logging.warning("Server list is empty. Skipping this scan cycle.")
+            time.sleep(60)
+            continue
+
+        results = IpReaderMulti(server_list, snapshot_id)
+        write_to_csv(results)
+        
+        logging.info(f"Scan cycle complete. Wrote {len(results)} rows. Waiting for next cycle.")
+        time.sleep(300)
+
+# --- Main Execution ---
 import routes, sys
 app.register_blueprint(routes.create_blueprint(sys.modules[__name__]))
 
