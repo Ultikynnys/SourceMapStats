@@ -56,27 +56,7 @@ def create_blueprint(main_app: "types.ModuleType") -> Blueprint:  # noqa: D401
             }
         )
 
-    # ─── scanning control ──────────────────────────────────────────────────
-    @bp.route("/api/start_scan", methods=["POST"])
-    @require_api_key
-    @rate_limiter
-    def start_scan():  # type: ignore[reuse]
-        if main_app.scanning_thread and main_app.scanning_thread.is_alive():  # type: ignore[attr-defined]
-            return jsonify({"status": "Scanning already in progress"})
 
-        main_app.scanning_stop_event.clear()  # type: ignore[attr-defined]
-        main_app.scanning_thread = threading.Thread(  # type: ignore[attr-defined]
-            target=main_app.scan_loop, daemon=True  # type: ignore[attr-defined]
-        )
-        main_app.scanning_thread.start()  # type: ignore[attr-defined]
-        return jsonify({"status": "Scanning started"})
-
-    @bp.route("/api/stop_scan", methods=["POST"])
-    @require_api_key
-    @rate_limiter
-    def stop_scan():  # type: ignore[reuse]
-        main_app.scanning_stop_event.set()  # type: ignore[attr-defined]
-        return jsonify({"status": "Scanning stop requested"})
 
     # ─── config / data endpoints ───────────────────────────────────────────
     @bp.route("/api/data")
@@ -114,17 +94,13 @@ def create_blueprint(main_app: "types.ModuleType") -> Blueprint:  # noqa: D401
         )
         return jsonify(chart_data)
 
-    @bp.route("/api/status")
+
+
+    @bp.route("/api/data_freshness")
     @rate_limiter
-    def api_status():  # type: ignore[reuse]
-        return jsonify(
-            {
-                "scanning_mode": main_app.scanning_mode,  # type: ignore[attr-defined]
-                "current_scanned_ip": main_app.current_scanned_ip,  # type: ignore[attr-defined]
-                "last_error": main_app.last_error_message,  # type: ignore[attr-defined]
-                "error_count": main_app.scan_error_count,  # type: ignore[attr-defined]
-            }
-        )
+    def get_freshness():  # type: ignore[reuse]
+        freshness = main_app.get_data_freshness()  # type: ignore[attr-defined]
+        return jsonify({"latest_scan": freshness})
 
     @bp.route("/api/csv_status")
     @rate_limiter

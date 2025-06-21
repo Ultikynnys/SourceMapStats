@@ -34,8 +34,7 @@ PUBLIC_MODE           = True           # False → bind 127.0.0.1
 MAX_SINGLE_IP_TIMEOUT = 1.0            # hard clamp per server query
 ReaderTimeFormat      = "%Y-%m-%d-%H:%M:%S"
 
-# ─── error counter ───────────────────────────────────────────────────────────
-scan_error_count = 0
+
 
 # ─── data cache ───────────────────────────────────────────────────────────────
 g_raw_data_cache = []
@@ -76,8 +75,6 @@ config = {
     "timeout_query":      0.5,
     "timeout_master":     60,
     "regionserver":       "all",
-    "RuntimeMinutes":     60,
-    "RunForever":         True,
     "servertimeout":      0.5
 }
 
@@ -211,6 +208,17 @@ def get_date_range():
         logging.error(f"Error getting date range: {e}")
         return {"min_date": None, "max_date": None}
 
+def get_data_freshness():
+    """Returns the last modification time of the CSV file."""
+    path = os.path.join(BASE_DIR, config["Filename"])
+    if not os.path.exists(path):
+        return None
+    try:
+        mtime = os.path.getmtime(path)
+        return datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+    except OSError:
+        return None
+
 def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent):
     logging.info("--- Starting get_chart_data ---")
     global g_chart_data_cache
@@ -242,7 +250,7 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
         g_chart_data_cache[cache_key] = result
         return result
 
-    df = pd.DataFrame(rows, columns=['ip', 'port', 'map', 'players', 'timestamp', 'unknown', 'snapshot_id'])
+    df = pd.DataFrame(rows, columns=['ip', 'port', 'map', 'players', 'timestamp', 'unknown', 'snapshot_id', 'csv_index'])
     logging.info(f"Loaded {len(df)} rows into DataFrame from CSV.")
     df['players'] = pd.to_numeric(df['players'], errors='coerce').fillna(0).astype(int)
     df['timestamp'] = pd.to_datetime(df['timestamp'], format=ReaderTimeFormat, errors='coerce')
@@ -395,62 +403,43 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     logging.info("--- Finished get_chart_data ---")
     return result
 
-# ─── scanning logic (slow-only) ───────────────────────────────────────────────
-scanning_stop_event = threading.Event()
-scanning_thread = None
-scanning_mode = "None"
-current_scanned_ip = ""
-last_error_message = ""
+
+
 
 def IpReader(ip):
     """Query single game server, return CSV row or None,
        with adaptive per-IP timeouts."""
-    global last_error_message, scan_error_count
-
-    ip_str = ip[0]
-    addr = (ip_str, int(ip[1]))
+    ip_str, port = ip
     timeout = ip_timeouts.get(ip_str, config["servertimeout"])
 
     try:
-        info = a2s.info(addr, timeout=min(timeout, MAX_SINGLE_IP_TIMEOUT))
-        players = info.player_count - info.bot_count
+        # Use a2s to query the server
+        info = a2s.info(ip, timeout=timeout)
 
-        if players < 1:
-            # treat “no players” as a successful quick read → shrink timeout
-            new_t = max(0.1, timeout - 0.1)
-            ip_timeouts[ip_str] = new_t
-            save_timeouts()
-            return None
+        # Process map name: remove newlines, control chars, trailing spaces
+        map_name = re.sub(r'[\r\n\x00-\x1F\x7F-\x9F]', '', info.map_name).strip()
 
-        # successful query → shrink timeout
-        new_t = max(0.1, timeout - 0.1)
-        ip_timeouts[ip_str] = new_t
-        save_timeouts()
+        # Get current timestamp
+        timestamp = datetime.now().strftime(ReaderTimeFormat)
 
-        row = [
-            ip_str, str(ip[1]), info.map_name, str(players),
-            datetime.now().strftime(ReaderTimeFormat), "00"
-        ]
-        return row
+        # Update timeout for this IP based on success
+        ip_timeouts[ip_str] = max(0.1, timeout * 0.9)  # Decrease timeout
 
-    except socket.timeout:
-        # real timeout → grow timeout
-        new_t = min(2.0, timeout + 0.5)
-        ip_timeouts[ip_str] = new_t
-        save_timeouts()
+        # Return the data as a list of strings
+        return [ip_str, str(port), map_name, str(info.player_count), timestamp, '0']
 
-        scan_error_count += 1
-        last_error_message = f"Timeout after {timeout}s"
+    except (socket.timeout, ConnectionResetError):
+        logging.warning(f"Timeout/Reset for {ip_str}:{port}")
+        # Increase timeout for this IP on failure
+        ip_timeouts[ip_str] = min(MAX_SINGLE_IP_TIMEOUT, timeout * 1.5)
         return None
-
     except Exception as e:
-        scan_error_count += 1
-        last_error_message = str(e)
+        logging.warning(f"Error for {ip_str}:{port}: {str(e)}")
+        # You might want to handle timeouts differently for other errors
         return None
 
 def SlowScan():
     ips = []
-    global last_error_message
     try:
         with master_server.MasterServerQuerier(timeout=config["timeout_master"]) as msq:
             ips = list(msq.find(
@@ -473,41 +462,49 @@ def CSVWriter(rows, rawfile):
             w.writerow(r + [str(idx)])
 
 def scan_loop():
+    logging.info("--- Starting scan_loop ---")
     rawfile = os.path.join(BASE_DIR, config["Filename"])
-    interval = 10 * 60  # 10 minutes
 
-    while not scanning_stop_event.is_set():
-        scanning_mode = "Slow"
-        scan_error_count = 0
+    while True:  # Main loop
+        all_ips = SlowScan()
+        logging.info(f"SlowScan found {len(all_ips)} IPs")
 
-        # perform a slow scan
-        rows = IpReaderMulti(SlowScan())
-        CSVWriter(rows, rawfile)
+        if not all_ips:
+            logging.warning("Initial master server query failed. Retrying in 60s.")
+            time.sleep(60)
+            continue
 
-        # wait until next scan or stop event
-        scanning_stop_event.wait(interval)
+        snapshot_id = datetime.now().strftime("%Y%m%d%H%M%S")
+        all_server_data = IpReaderMulti(all_ips, snapshot_id)
+        logging.info(f"IpReaderMulti got {len(all_server_data)} rows")
 
-    scanning_mode = "None"
-    current_scanned_ip = ""
+        if all_server_data:
+            CSVWriter(all_server_data, rawfile)
 
-def IpReaderMulti(lst):
+        # Wait before the next full scan
+        logging.info("Scan finished, sleeping for 5 minutes.")
+        time.sleep(300)
+
+def IpReaderMulti(lst, snapshot_id):
     out = []
     total = len(lst)
     for i, ip in enumerate(lst, 1):
-        global current_scanned_ip
-        current_scanned_ip = f"{i}/{total} {ip[0]}:{ip[1]}"
+        logging.info(f"Querying IP {i}/{total}: {ip[0]}:{ip[1]}")
         row = IpReader(ip)
         if row:
-            out.append(row)
-    current_scanned_ip = ""
+            out.append(row + [snapshot_id])
     return out
 
 # Import and register routes from external module
 import routes, sys
 app.register_blueprint(routes.create_blueprint(sys.modules[__name__]))
 
-# ─── run waitress ─────────────────────────────────────────────────────────────
-if __name__ == "__main__":
+if __name__ == '__main__':
+    # Start the scanning loop in a background thread
+    import threading
+    scan_thread = threading.Thread(target=scan_loop, daemon=True)
+    scan_thread.start()
+
     host = "0.0.0.0" if PUBLIC_MODE else "127.0.0.1"
     port = int(os.getenv("PORT", 5000))
     serve(app, host=host, port=port, threads=8)
