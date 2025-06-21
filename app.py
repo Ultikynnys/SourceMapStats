@@ -37,7 +37,6 @@ ReaderTimeFormat      = "%Y-%m-%d-%H:%M:%S"
 
 
 # ─── data cache ───────────────────────────────────────────────────────────────
-g_raw_data_cache = []
 g_cache_file_mtime = 0
 g_cache_lock = threading.Lock()
 g_chart_data_cache = {}
@@ -127,8 +126,6 @@ def rate_limiter(fn):
     return wrapped
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
-
-
 def get_color(i: int, total: int, intensity: int) -> str:
     ang = i * intensity * 2 * math.pi / max(total, 1)
     r = int((math.sin(ang) + 1) / 2 * 255)
@@ -139,6 +136,17 @@ def get_color(i: int, total: int, intensity: int) -> str:
 def is_ip_address(ip: str) -> bool:
     return re.match(r"^(([0-1]?\d?\d|2[0-4]\d|25[0-5])\.){3}"
                     r"([0-1]?\d?\d|2[0-4]\d|25[0-5])$", ip) is not None
+
+def get_country(ip: str) -> str:
+    try:
+        reader = geoip2.database.Reader(GeoLite2CityPath)
+        response = reader.city(ip)
+        return response.country.name
+    except geoip2.errors.AddressNotFoundError:
+        return "Unknown"
+    except Exception as e:
+        logging.error(f"GeoIP error: {e}")
+        return "Unknown"
 
 # ─── per-IP adaptive timeouts ────────────────────────────────────────────────
 IP_TIMEOUTS_FILE = os.path.join(BASE_DIR, 'ip_timeouts.json')
@@ -154,35 +162,20 @@ def save_timeouts():
 
 # ─── data-processing functions ────────────────────────────────────────────────
 def RawData():
-    logging.info("--- Starting RawData ---")
-    global g_raw_data_cache, g_cache_file_mtime, g_cache_lock
-
-    path = os.path.join(BASE_DIR, config["Filename"])
-    if not os.path.exists(path):
+    """Memoized, thread-safe CSV data loader."""
+    rawfile = os.path.join(BASE_DIR, config["Filename"])
+    if not os.path.exists(rawfile):
+        logging.warning(f"Raw data file not found: {rawfile}")
         return []
-
     try:
-        mtime = os.path.getmtime(path)
-    except OSError:
+        with open(rawfile, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            # Filter out empty rows that might exist in the CSV
+            rows = [row for row in reader if row]
+        return rows
+    except (IOError, csv.Error) as e:
+        logging.error(f"Error reading raw data file: {e}")
         return []
-
-    with g_cache_lock:
-        if mtime == g_cache_file_mtime:
-            return g_raw_data_cache
-
-        out = []
-        try:
-            with open(path, newline='', encoding='utf-8') as f:
-                for row in csv.reader(f):
-                    if len(row) >= 7 and row[0] not in config["IpBlackList"]:
-                        out.append(row)
-        except Exception as e:
-            print(f"Error reading or processing {path}: {e}")
-            return []
-
-        g_raw_data_cache = out
-        g_cache_file_mtime = mtime
-        return out
 
 def get_date_range():
     """Reads the CSV and returns the min and max dates found."""
@@ -250,18 +243,26 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
         g_chart_data_cache[cache_key] = result
         return result
 
-    # Detect CSV format based on number of columns for backward compatibility
-    num_cols = len(rows[0])
-    if num_cols == 8:
-        df = pd.DataFrame(rows, columns=['ip', 'port', 'map', 'players', 'timestamp', 'unknown', 'snapshot_id', 'csv_index'])
-    elif num_cols == 7:
-        df = pd.DataFrame(rows, columns=['ip', 'port', 'map', 'players', 'timestamp', 'unknown', 'csv_index'])
-        df['snapshot_id'] = 'unknown'  # Add placeholder
-    else:
-        logging.error(f"Unexpected CSV format with {num_cols} columns. Aborting.")
-        # Return empty data to prevent crash
-        return {"labels": [], "datasets": [], "ranking": [], "averageDailyPlayerCount": 0, "totalPlayers": 0, "dailyTotals": [], "snapshotCounts": [], "shownMapsCount": 0, "totalFilteredMaps": 0}
+    # Normalize rows to handle mixed legacy and modern data formats.
+    processed_rows = []
+    for i, row in enumerate(rows):
+        num_cols = len(row)
+        if num_cols == 7:  # Modern format: [ip, port, map, players, timestamp, unknown, snapshot_id]
+            processed_rows.append(row)
+        elif num_cols == 6:  # Legacy format with 'unknown' field
+            processed_rows.append(row + [f'unknown_{i}'])
+        elif num_cols == 5:  # Older legacy format
+            processed_rows.append(row + ['0', f'unknown_{i}'])
+        else:
+            logging.warning(f"Skipping malformed row with {num_cols} columns: {row}")
 
+    if not processed_rows:
+        logging.warning("No valid rows found after processing. Returning empty chart data.")
+        result = {"labels": [], "datasets": [], "ranking": [], "averageDailyPlayerCount": 0, "totalPlayers": 0, "dailyTotals": [], "snapshotCounts": [], "shownMapsCount": 0, "totalFilteredMaps": 0}
+        g_chart_data_cache[cache_key] = result
+        return result
+
+    df = pd.DataFrame(processed_rows, columns=['ip', 'port', 'map', 'players', 'timestamp', 'unknown', 'snapshot_id'])
     logging.info(f"Loaded {len(df)} rows into DataFrame from CSV.")
     df['players'] = pd.to_numeric(df['players'], errors='coerce').fillna(0).astype(int)
     df['timestamp'] = pd.to_datetime(df['timestamp'], format=ReaderTimeFormat, errors='coerce')
