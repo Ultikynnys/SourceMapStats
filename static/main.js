@@ -55,13 +55,6 @@
     }
 
     /* API-key UI */
-    async function validateApiKey(key) {
-      if (!hasValidApiKey(key)) return false;
-      try {
-        const res = await fetch('/api/validate_key', { cache: 'no-store', headers: { 'X-API-KEY': key } });
-        return res.ok;
-      } catch { return false; }
-    }
     function toggleExtraParams(show) {
       document.getElementById('fastWriteGroup').style.display = show ? 'flex' : 'none';
       document.getElementById('runtimeMinutesGroup').style.display = show ? 'flex' : 'none';
@@ -72,7 +65,9 @@
       const key = sanitizeApiKey(raw);
       if (raw !== key) elem.value = key;
 
-      const valid = await validateApiKey(key);
+      // We'll just rely on the client-side check for showing extra params
+      // to avoid a 404 on a non-existent endpoint. The backend still validates.
+      const valid = hasValidApiKey(key);
       toggleExtraParams(valid);
     }
 
@@ -204,23 +199,6 @@
         }
     }
 
-    async function updateDataFreshness() {
-        try {
-            const response = await fetch('/api/data_freshness');
-            const data = await response.json();
-            const freshnessDiv = document.getElementById('dataFreshness');
-            if (data.latest_scan) {
-                freshnessDiv.textContent = `Latest data: ${data.latest_scan}`;
-            } else {
-                freshnessDiv.textContent = 'Latest data: Not available';
-            }
-        } catch (error) {
-            console.error('Error fetching data freshness:', error);
-            const freshnessDiv = document.getElementById('dataFreshness');
-            freshnessDiv.textContent = 'Latest data: Error';
-        }
-    }
-
     /* Main chart update orchestrator */
     const updateChart = createThrottledFunction(async (showLoading = true) => {
       const loadingIndicator = document.getElementById('loadingIndicator');
@@ -278,7 +256,7 @@
 
     // Function to set the default start date to 7 days ago
     function setDefaultStartDate() {
-      const startDateInput = document.getElementById('start-date');
+      const startDateInput = document.getElementById('Start_Date');
       if (startDateInput) {
         const today = new Date();
         const sevenDaysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7);
@@ -289,19 +267,5 @@
         startDateInput.value = `${year}-${month}-${day}`;
       }
     }
-
-    // Function to set the default start date to 7 days ago
-function setDefaultStartDate() {
-    const startDateInput = document.getElementById('start-date');
-    if (startDateInput) {
-        const today = new Date();
-        const sevenDaysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7);
-        // Format the date as YYYY-MM-DD for the input field
-        const year = sevenDaysAgo.getFullYear();
-        const month = String(sevenDaysAgo.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-        const day = String(sevenDaysAgo.getDate()).padStart(2, '0');
-        startDateInput.value = `${year}-${month}-${day}`;
-    }
-}
 
 document.addEventListener('DOMContentLoaded', initialize);
