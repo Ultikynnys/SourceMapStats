@@ -215,6 +215,10 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     merged_df = pd.merge(daily_player_sum, daily_snapshot_count, on=['date', 'map'])
     merged_df['avg_players'] = (merged_df['players'] / merged_df['unique_snapshots']).round(percision)
     
+    # Calculate daily total for percentage calculation
+    daily_total_avg_players = merged_df.groupby('date')['avg_players'].transform('sum')
+    merged_df['player_percentage'] = (merged_df['avg_players'] / daily_total_avg_players.replace(0, 1) * 100).fillna(0)
+
     # --- Chart Dataset Preparation ---
     top_maps = merged_df.groupby('map')['avg_players'].mean().nlargest(maps_to_show).index
     datasets = []
@@ -222,7 +226,7 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
         map_data = merged_df[merged_df['map'] == map_name]
         datasets.append({
             'label': map_name,
-            'data': list(map_data.set_index('date')['avg_players'].reindex(date_range.date, fill_value=0)),
+            'data': list(map_data.set_index('date')['player_percentage'].reindex(date_range.date, fill_value=0)),
             'backgroundColor': get_color(len(datasets), len(top_maps), color_intensity),
             'borderColor': get_color(len(datasets), len(top_maps), color_intensity).replace('rgb', 'rgba').replace(')', ', 1)'),
             'borderWidth': 1
@@ -230,7 +234,7 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
 
     other_maps_df = merged_df[~merged_df['map'].isin(top_maps)]
     if not other_maps_df.empty:
-        other_data = other_maps_df.groupby('date')['avg_players'].sum().reindex(date_range.date, fill_value=0)
+        other_data = other_maps_df.groupby('date')['player_percentage'].sum().reindex(date_range.date, fill_value=0)
         datasets.append({
             'label': 'Other',
             'data': list(other_data),
