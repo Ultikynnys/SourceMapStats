@@ -250,7 +250,18 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
         g_chart_data_cache[cache_key] = result
         return result
 
-    df = pd.DataFrame(rows, columns=['ip', 'port', 'map', 'players', 'timestamp', 'unknown', 'snapshot_id', 'csv_index'])
+    # Detect CSV format based on number of columns for backward compatibility
+    num_cols = len(rows[0])
+    if num_cols == 8:
+        df = pd.DataFrame(rows, columns=['ip', 'port', 'map', 'players', 'timestamp', 'unknown', 'snapshot_id', 'csv_index'])
+    elif num_cols == 7:
+        df = pd.DataFrame(rows, columns=['ip', 'port', 'map', 'players', 'timestamp', 'unknown', 'csv_index'])
+        df['snapshot_id'] = 'unknown'  # Add placeholder
+    else:
+        logging.error(f"Unexpected CSV format with {num_cols} columns. Aborting.")
+        # Return empty data to prevent crash
+        return {"labels": [], "datasets": [], "ranking": [], "averageDailyPlayerCount": 0, "totalPlayers": 0, "dailyTotals": [], "snapshotCounts": [], "shownMapsCount": 0, "totalFilteredMaps": 0}
+
     logging.info(f"Loaded {len(df)} rows into DataFrame from CSV.")
     df['players'] = pd.to_numeric(df['players'], errors='coerce').fillna(0).astype(int)
     df['timestamp'] = pd.to_datetime(df['timestamp'], format=ReaderTimeFormat, errors='coerce')
