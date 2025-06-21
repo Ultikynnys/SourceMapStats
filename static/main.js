@@ -163,8 +163,7 @@
         window[config.chartVar] = new Chart(ctx, { type: config.type, data: config.data, options: chartOptions });
       });
 
-      const avgCount = data.averageDailyPlayerCount.toFixed(1);
-      document.getElementById('playerCountDisplay').textContent = `Average player count (${document.getElementById('OnlyMapsContaining').value}): ${avgCount}`;
+
     }
 
     /* Date picker */
@@ -203,13 +202,11 @@
     const updateChart = createThrottledFunction(async (showLoading = true) => {
       const loadingIndicator = document.getElementById('loadingIndicator');
       const chartContainers = document.querySelectorAll('.chart-container');
-      const playerCount = document.getElementById('playerCountDisplay');
       const refreshBtn = document.getElementById('refreshChart');
 
       if (showLoading) {
         loadingIndicator.style.display = 'block';
         chartContainers.forEach(c => c.style.display = 'none');
-        playerCount.style.display = 'none';
       }
       refreshBtn.disabled = true;
 
@@ -228,7 +225,6 @@
         if (showLoading) {
           loadingIndicator.style.display = 'none';
           chartContainers.forEach(c => c.style.display = 'block');
-          playerCount.style.display = 'block';
         }
         refreshBtn.disabled = false;
       }
