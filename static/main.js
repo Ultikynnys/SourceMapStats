@@ -271,8 +271,37 @@
       await checkApiKeyState();
       await checkCSVStatus();
       await initializeDatePicker();
+      setDefaultStartDate();
       await updateChart(true);
       await updateDataFreshness();
     }
 
-    document.addEventListener('DOMContentLoaded', initialize);
+    // Function to set the default start date to 7 days ago
+    function setDefaultStartDate() {
+      const startDateInput = document.getElementById('start-date');
+      if (startDateInput) {
+        const today = new Date();
+        const sevenDaysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7);
+        // Format the date as YYYY-MM-DD for the input field
+        const year = sevenDaysAgo.getFullYear();
+        const month = String(sevenDaysAgo.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+        const day = String(sevenDaysAgo.getDate()).padStart(2, '0');
+        startDateInput.value = `${year}-${month}-${day}`;
+      }
+    }
+
+    // Function to set the default start date to 7 days ago
+function setDefaultStartDate() {
+    const startDateInput = document.getElementById('start-date');
+    if (startDateInput) {
+        const today = new Date();
+        const sevenDaysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7);
+        // Format the date as YYYY-MM-DD for the input field
+        const year = sevenDaysAgo.getFullYear();
+        const month = String(sevenDaysAgo.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+        const day = String(sevenDaysAgo.getDate()).padStart(2, '0');
+        startDateInput.value = `${year}-${month}-${day}`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', initialize);
