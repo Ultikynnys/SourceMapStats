@@ -55,7 +55,6 @@
     }
 
     /* API-key UI */
-    let statusInterval = null;
     async function validateApiKey(key) {
       if (!hasValidApiKey(key)) return false;
       try {
@@ -72,47 +71,9 @@
       const raw = elem.value;
       const key = sanitizeApiKey(raw);
       if (raw !== key) elem.value = key;
-      if (!hasValidApiKey(key)) {
-        document.getElementById('apiKeyState').textContent =
-          'API Key State: Not supplied — chart-only mode';
-        document.getElementById('startScan').style.display = 'none';
-        document.getElementById('stopScan').style.display = 'none';
-        toggleExtraParams(false);
-        if (statusInterval) clearInterval(statusInterval), statusInterval = null;
-        return;
-      }
-      const valid = await validateApiKey(key);
-      if (!valid) {
-        document.getElementById('apiKeyState').textContent = 'API Key State: Invalid';
-        document.getElementById('startScan').style.display = 'none';
-        document.getElementById('stopScan').style.display = 'none';
-        toggleExtraParams(false);
-        if (statusInterval) clearInterval(statusInterval), statusInterval = null;
-        return;
-      }
-      document.getElementById('apiKeyState').textContent = 'API Key State: Valid';
-      document.getElementById('startScan').style.display = 'inline-block';
-      document.getElementById('stopScan').style.display = 'inline-block';
-      toggleExtraParams(true);
-      if (!statusInterval) {
-        statusInterval = setInterval(() => refreshStatus().catch(() => {}), 1000);
-      }
-    }
 
-    /* Connection heartbeat */
-    async function updateConnectionStatus() {
-      const el = document.getElementById('connectionStatus');
-      try {
-        const d = await fetch('/api/heartbeat', { cache: 'no-store' })
-          .then(r => { if (!r.ok) throw ''; return r.json(); });
-        el.textContent = 'Connected';
-        el.classList.replace('disconnected', 'connected');
-        document.getElementById('requestsLeft').textContent =
-          `Requests Left: ${d.requests_left}`;
-      } catch {
-        el.textContent = 'No server found';
-        el.classList.replace('connected', 'disconnected');
-      }
+      const valid = await validateApiKey(key);
+      toggleExtraParams(valid);
     }
 
     /* CSV status */
@@ -120,36 +81,6 @@
       try {
         const d = await doFetch('/api/csv_status');
         document.getElementById('refreshChart').disabled = !(d.exists && !d.empty);
-      } catch {}
-    }
-
-    /* Scan controls */
-    async function startScanning() {
-      const key = sanitizeApiKey(document.getElementById('api_key').value);
-      if (!hasValidApiKey(key)) { alert('API key must be at least 10 characters.'); return; }
-      try {
-        const res = await doFetch('/api/start_scan', { method: 'POST' });
-        alert(res.status || res.error);
-      } catch {}
-    }
-    async function stopScanning() {
-      const key = sanitizeApiKey(document.getElementById('api_key').value);
-      if (!hasValidApiKey(key)) { alert('API key must be at least 10 characters.'); return; }
-      try {
-        const res = await doFetch('/api/stop_scan', { method: 'POST' });
-        alert(res.status || res.error);
-      } catch {}
-    }
-
-    /* Status polling */
-    async function refreshStatus() {
-      try {
-        const s = await doFetch('/api/status');
-        document.getElementById('scanningStatus').textContent = `Scanning Status: ${s.scanning_status || 'Idle'}`;
-        document.getElementById('scanningMode').textContent = `Scanning Mode: ${s.scanning_mode || 'None'}`;
-        document.getElementById('currentIP').textContent = `Current IP: ${s.current_scanned_ip || 'None'}`;
-        document.getElementById('lastError').textContent = `Last Error: ${s.last_error || 'None'}`;
-        document.getElementById('errorCount').textContent = `Error Count: ${s.error_count || 0}`;
       } catch {}
     }
 
@@ -256,6 +187,40 @@
       }
     }
 
+    async function updateDataFreshness() {
+        try {
+            const response = await fetch('/api/data_freshness');
+            const data = await response.json();
+            const freshnessDiv = document.getElementById('dataFreshness');
+            if (data.latest_scan) {
+                freshnessDiv.textContent = `Latest data: ${data.latest_scan}`;
+            } else {
+                freshnessDiv.textContent = 'Latest data: Not available';
+            }
+        } catch (error) {
+            console.error('Error fetching data freshness:', error);
+            const freshnessDiv = document.getElementById('dataFreshness');
+            freshnessDiv.textContent = 'Latest data: Error';
+        }
+    }
+
+    async function updateDataFreshness() {
+        try {
+            const response = await fetch('/api/data_freshness');
+            const data = await response.json();
+            const freshnessDiv = document.getElementById('dataFreshness');
+            if (data.latest_scan) {
+                freshnessDiv.textContent = `Latest data: ${data.latest_scan}`;
+            } else {
+                freshnessDiv.textContent = 'Latest data: Not available';
+            }
+        } catch (error) {
+            console.error('Error fetching data freshness:', error);
+            const freshnessDiv = document.getElementById('dataFreshness');
+            freshnessDiv.textContent = 'Latest data: Error';
+        }
+    }
+
     /* Main chart update orchestrator */
     const updateChart = createThrottledFunction(async (showLoading = true) => {
       const loadingIndicator = document.getElementById('loadingIndicator');
@@ -300,18 +265,14 @@
       });
       document.getElementById('paramsForm').addEventListener('input', debouncedUpdate);
       document.getElementById('refreshChart').addEventListener('click', () => updateChart(true));
-      document.getElementById('startScan').addEventListener('click', startScanning);
-      document.getElementById('stopScan').addEventListener('click', stopScanning);
-      document.getElementById('refreshStatus').addEventListener('click', refreshStatus);
       document.getElementById('api_key').addEventListener('input', () => checkApiKeyState().catch(() => {}));
 
       // Initial page load
-      updateConnectionStatus();
       await checkApiKeyState();
       await checkCSVStatus();
-      await refreshStatus();
       await initializeDatePicker();
       await updateChart(true);
+      await updateDataFreshness();
     }
 
     document.addEventListener('DOMContentLoaded', initialize);

@@ -49,6 +49,7 @@
   <script src="/static/octocat-loader.js"></script>
 </head>
 <body>
+    <div id="dataFreshness">Latest data: Unknown</div>
   <div class="container">
     <header>
       <h1>Source Map Stats Visualization</h1>
@@ -94,23 +95,7 @@
           <button id="refreshChart" class="btn">Refresh Chart</button>
         </section>
 
-        <!-- Status / Scan Controls -->
-        <section class="status-section">
-          <h2>Status</h2>
-          <div class="btn-group">
-            <button id="startScan" class="btn">Start Scanning</button>
-            <button id="stopScan"  class="btn">Stop Scanning</button>
-          </div>
-          <p id="scanningStatus">Scanning Status: Idle</p>
-          <p id="scanningMode">Scanning Mode: None</p>
-          <p id="currentIP">Current IP: None</p>
-          <p id="lastError">Last Error: None</p>
-          <p id="errorCount">Error Count: 0</p>
-          <p id="requestsLeft">Requests Left: —</p>
-          <p id="apiKeyState">API Key State: Unknown</p>
-          <p id="connectionStatus" class="disconnected">No server found</p>
-          <button id="refreshStatus" class="btn">Refresh Status</button>
-        </section>
+
 
       </div>
 
