@@ -32,7 +32,7 @@ if exist requirements.txt (
 
 REM Decide default CSV if no args provided
 set "DEFAULT_CSV=output.csv"
-if not exist "%DEFAULT_CSV%" if exist "example_output.csv" set "DEFAULT_CSV=example_output.csv"
+if not exist "%DEFAULT_CSV%" if exist "output.csv" set "DEFAULT_CSV=output.csv"
 
 if "%~1"=="" (
     echo No arguments provided. Using default CSV: "%DEFAULT_CSV%"
