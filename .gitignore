@@ -16,3 +16,5 @@ stats.log
 
 !example_output.csv
 ip_timeouts.json
+*.duckdb
+config_keys.json

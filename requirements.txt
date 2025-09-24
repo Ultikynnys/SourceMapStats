@@ -5,3 +5,4 @@ waitress==3.0.2
 six==1.17.0
 pandas==2.2.2
 geoip2==4.8.0
+duckdb

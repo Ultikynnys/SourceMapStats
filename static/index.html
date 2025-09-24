@@ -43,8 +43,8 @@
     }
   </style>
 
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Chart.js (pinned version) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <!-- Optional Octocat loader -->
   <script src="/static/octocat-loader.js"></script>
 </head>
@@ -61,6 +61,8 @@
       <section class="ranking-section">
         <h2>Ranking</h2>
         <ol id="mapRanking"></ol>
+        <h2 style="margin-top:1rem;">Server Ranking</h2>
+        <ol id="serverRanking"></ol>
       </section>
 
       <!-- MIDDLE — Charts + Status -->
@@ -72,8 +74,11 @@
           <!-- Sanity check output -->
           <div id="dataErrors"></div>
 
-          <!-- Loading indicator -->
-          <div id="loadingIndicator" style="display: none; color: #f39c12; font-size: 1.2em; padding: 20px;">Loading chart data...</div>
+          <!-- Chart overlay (shown while loading) -->
+          <div id="chartOverlay" class="chart-overlay" style="display:none;">
+            <div class="spinner"></div>
+            <div class="overlay-text">Loading…</div>
+          </div>
 
           <!-- Main share-of-day chart -->
           <div class="chart-container main-chart">
@@ -88,9 +93,8 @@
             <canvas id="snapshotChartCanvas"></canvas>
           </div>
 
-          <!-- Text + Refresh -->
+          <!-- Text below charts -->
           <p id="playerCountDisplay"></p>
-          <button id="refreshChart" class="btn">Refresh Chart</button>
         </section>
 
 
@@ -115,16 +119,53 @@
             </select>
           </div>
           <div class="form-group">
+            <label for="TopServers">Top Servers</label>
+            <input type="number" id="TopServers" name="top_servers" value="10" min="1" max="50">
+          </div>
+          <div class="form-group">
+            <label for="ServerFilter">Server Filter</label>
+            <select id="ServerFilter" name="server_filter">
+              <option value="ALL" selected>ALL</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Date Range</label>
+            <div id="timelineContainer" class="timeline-container">
+              <div id="timelineScroll" class="timeline-scroll">
+                <div id="timelineInner" class="timeline-inner">
+                  <div id="timelineTrack" class="timeline-track">
+                    <div id="timelineCoverage" class="timeline-coverage"></div>
+                    <div id="timelineSelection" class="timeline-selection"></div>
+                    <div id="timelineBracketStart" class="timeline-bracket bracket-start">[</div>
+                    <div id="timelineBracketEnd" class="timeline-bracket bracket-end">]</div>
+                  </div>
+                  <input type="range" id="timelineStart" class="timeline-range" min="0" max="1" value="0" step="1">
+                  <input type="range" id="timelineEnd" class="timeline-range" min="0" max="1" value="1" step="1">
+                </div>
+              </div>
+              <div class="timeline-labels">
+                <span id="timelineStartLabel">Start</span>
+                <span id="timelineCountLabel" class="timeline-count">0 days</span>
+                <span id="timelineEndLabel">End</span>
+              </div>
+            </div>
+          </div>
+          <div class="form-group" style="display:none;">
             <label for="Start_Date">Start Date</label>
             <input type="date" id="Start_Date" name="start_date" value="2001-10-02">
           </div>
-          <div class="form-group">
+          <div class="form-group" style="display:none;">
             <label for="DaysToShow">Days to Show</label>
             <input type="number" id="DaysToShow" name="days_to_show" value="7" min="1" max="365">
           </div>
           <div class="form-group">
             <label for="OnlyMapsContaining">Only Maps Containing</label>
             <input type="text" id="OnlyMapsContaining" name="only_maps_containing" value="dr_">
+          </div>
+          <div class="form-group">
+            <label for="AppendMapsContaining">Append Maps Containing</label>
+            <input type="text" id="AppendMapsContaining" name="append_maps_containing" value="">
+            <small>Comma-separated substrings. Matching maps will be appended to the ranking and drawn in the chart.</small>
           </div>
           <div class="form-group" id="fastWriteGroup">
             <label for="FastWriteDelay">Fast Write Delay (min)</label>
@@ -153,6 +194,10 @@
               <option value="synergy">Synergy</option>
               <option value="alienswarm">Alien Swarm</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label class="sr-only" for="refreshChart">Refresh</label>
+            <button id="refreshChart" type="button" class="btn">Refresh Chart</button>
           </div>
         </form>
       </section>

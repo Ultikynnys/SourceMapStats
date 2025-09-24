@@ -135,11 +135,175 @@
     padding: 20px;
     border-radius: 8px;
     text-align: center;
+    position: relative; /* for overlay positioning */
   }
   #playerCountDisplay {
     margin-top: 10px;
     font-size: 18px;
   }
+  /* make canvases scale down to the container width */
+  .chart-box canvas {
+    max-width: 100%;
+    height: auto !important;
+    display: block;
+    margin: 0 auto;
+  }
+  /* =====================================================
+     TIMELINE (date range selector)
+     ===================================================== */
+  .timeline-container {
+    position: relative;
+    width: 100%;
+    user-select: none;
+    padding: 6px 0; /* breathing room for thumbs */
+  }
+  /* Make the timeline container flex like inputs in the form row */
+  .form-group .timeline-container { flex: 2 1 300px; }
+  .timeline-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
+    border: 1px solid #444;
+    border-radius: 4px;
+    background: #1e1e1e;
+  }
+  .timeline-inner {
+    position: relative;
+    height: 28px; /* enough room for thumbs */
+    min-width: 100%;
+  }
+  .timeline-track {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    left: 0; right: 0;
+    height: 12px;
+    background: #444;
+    border-radius: 6px;
+    overflow: hidden;
+    z-index: 1;
+  }
+  .timeline-coverage {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #c0392b; /* default red; JS will set gradient */
+    pointer-events: none;
+    z-index: 1;
+  }
+  .timeline-selection {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    left: 0;
+    width: 0;
+    background: rgba(243, 156, 18, 0.25);
+    border: 2px solid #f39c12;
+    border-radius: 6px;
+    pointer-events: none;
+    box-sizing: border-box;
+    z-index: 2;
+    display: none; /* no fill; we only show start/end markers */
+  }
+  .timeline-range {
+    position: absolute;
+    left: 0; right: 0;
+    top: 50%; transform: translateY(-50%);
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    outline: none;
+    height: 24px; /* for thumb */
+    margin: 0;
+    pointer-events: auto;
+  }
+  /* Stack the ranges on top of each other */
+  #timelineStart.timeline-range { z-index: 3; }
+  #timelineEnd.timeline-range   { z-index: 2; }
+  /* WebKit */
+  .timeline-range::-webkit-slider-runnable-track {
+    height: 0; /* hide native track */
+    background: transparent;
+    border-radius: 0;
+    border: 0;
+  }
+  .timeline-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #f39c12;
+    border: 2px solid #fff;
+    margin-top: -8px; /* center over 12px track (thumb 16px) */
+    cursor: pointer;
+  }
+  /* Firefox */
+  .timeline-range::-moz-range-track {
+    height: 0; /* hide native track */
+    background: transparent;
+    border: 0;
+  }
+  /* IE/Edge legacy */
+  .timeline-range::-ms-track {
+    height: 0;
+    background: transparent;
+    border-color: transparent;
+    color: transparent;
+  }
+  .timeline-range::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #f39c12;
+    border: 2px solid #fff;
+    cursor: pointer;
+  }
+
+  /* Bracket markers near slider handles */
+  .timeline-bracket {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: #f6f6f6;
+    font-size: 16px;
+    line-height: 1;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    z-index: 4;
+    pointer-events: none;
+  }
+  .timeline-bracket.bracket-start { color: #f39c12; }
+  .timeline-bracket.bracket-end { color: #f39c12; }
+  .timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    color: #ccc;
+    font-size: 12px;
+    margin-top: 6px;
+  }
+  /* =====================================================
+     CHART LOADING OVERLAY
+     ===================================================== */
+  .chart-overlay {
+    position: absolute;
+    inset: 0;
+    display: none; /* shown via JS */
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(0,0,0,0.35);
+    z-index: 10;
+  }
+  .chart-overlay .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid rgba(255,255,255,0.3);
+    border-top-color: #f39c12;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  .chart-overlay .overlay-text {
+    color: #fff;
+    font-size: 14px;
+    letter-spacing: 0.3px;
+  }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   
   /* =====================================================
      Buttons
@@ -220,6 +384,12 @@
     background: #1e1e1e;
     color: #e0e0e0;
   }
+  /* Do not apply text-input styling to range sliders */
+  .form-group input[type="range"] {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
   #fastWriteGroup,
   #runtimeMinutesGroup {
     display: none;
@@ -244,26 +414,6 @@
     color: #e0e0e0;
     margin-top: 40px;
   }
-  .footer-content {
-    width: 90%;
-    max-width: 1200px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    text-align: center;
-  }
-  .description {
-    font-size: 14px;
-    line-height: 1.5;
-    max-width: 900px;
-  }
-  .copyright {
-    font-size: 14px;
-    opacity: .8;
-  }
-  
   /* =====================================================
      GITHUB CORNER (top-right “notch”)
      ===================================================== */
@@ -303,15 +453,3 @@
 
 
   /* make the chart container scrollable if it still overflows */
-.chart-box {
-  overflow-x: auto;
-  position: relative; /* ensure it encloses its children */
-}
-
-/* make canvases scale down to the container width */
-.chart-box canvas {
-  max-width: 100%;
-  height: auto !important;
-  display: block;
-  margin: 0 auto;
-}

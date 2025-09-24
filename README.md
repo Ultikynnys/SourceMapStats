@@ -1,7 +1,7 @@
 # SourceMapStats
 
 **SourceMapStats** is an end-to-end statistics dashboard for Valve Source / GoldSource games.  
-It periodically queries public game servers, stores per-map player counts in a CSV file, and serves an interactive Chart.js dashboard so you can explore which maps are really being played over time.
+It periodically queries public game servers, stores per-map player counts in a DuckDB database, and serves an interactive Chart.js dashboard so you can explore which maps are really being played over time.
 
 ![screenshot](docs/example.png) 
 
@@ -161,6 +161,30 @@ Changes persist **until the process restarts**. Consider using environment varia
 
 ---
 
+## Storage backend
+
+SourceMapStats now uses an embedded DuckDB database by default instead of CSV files.
+
+- Default path: `sourcemapstats.duckdb` (configurable via `DBFilename` in `app.py`).
+- On first startup, if the database is empty and a legacy CSV exists (see `Filename`), the server will automatically import the CSV into DuckDB.
+- The existing endpoint `/api/csv_status` remains for backward compatibility; it now reports the presence of the DuckDB file and whether the `samples` table has any rows.
+
+Schema of table `samples`:
+
+| column        | type      |
+|---------------|-----------|
+| `ip`          | TEXT      |
+| `port`        | INTEGER   |
+| `map`         | TEXT      |
+| `players`     | INTEGER   |
+| `timestamp`   | TIMESTAMP |
+| `country_code`| TEXT      |
+| `snapshot_id` | TEXT      |
+
+Install dependency: add `duckdb` to your Python environment (already present in `requirements.txt`).
+
+---
+
 ## Security Recommendations
 
 1. Always change the default API key before first run  
@@ -184,7 +208,7 @@ Supply a header `X-API-KEY: <your-token>` to bypass this limit.
 | **GET**    | `/api/status`       | JSON payload with current scanner state.                      |
 | **GET**    | `/api/data`         | Chart-ready JSON (labels, datasets, stats).                   |
 | **POST**   | `/api/update_params`| Hot-patch configuration.                                      |
-| **GET**    | `/api/csv_status`   | `{ exists: bool, empty: bool }`.                              |
+| **GET**    | `/api/csv_status`   | `{ exists: bool, empty: bool }` for the DuckDB database.      |
 
 Example:
 
