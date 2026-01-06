@@ -6,3 +6,4 @@ six==1.17.0
 pandas==2.2.2
 geoip2==4.8.0
 duckdb
+python-dotenv==1.0.1

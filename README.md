@@ -1,4 +1,4 @@
-# SourceMapStats
+﻿# SourceMapStats
 
 **SourceMapStats** is an end-to-end statistics dashboard for Valve Source / GoldSource games.  
 It periodically queries public game servers, stores per-map player counts in a DuckDB database, and serves an interactive Chart.js dashboard so you can explore which maps are really being played over time.
@@ -14,7 +14,7 @@ It periodically queries public game servers, stores per-map player counts in a D
   - [Live Demo](#live-demo)
   - [Quick start](#quick-start)
     - [1. Clone \& install](#1-clone--install)
-    - [2. Set your own API key](#2-set-your-own-api-key)
+    - [2. Set your API keys](#2-set-your-api-keys)
     - [3. Run the server](#3-run-the-server)
     - [4. Start the crawler from the UI](#4-start-the-crawler-from-the-ui)
     - [5. (Optional) Set up as a system service](#5-optional-set-up-as-a-system-service)
@@ -29,7 +29,7 @@ It periodically queries public game servers, stores per-map player counts in a D
 ## Why?
 
 I built SourceMapStats for a personal project: I wanted concrete data about which **Team Fortress 2** maps people really play.  
-The scanner, however, is game-agnostic—just change the `Game` parameter and it will happily crawl any Source engine title that’s listed on the Steam Master Server.
+The scanner, however, is game-agnostic - just change the `Game` parameter and it will happily crawl any Source engine title available via the Steam Web API.
 
 ---
 
@@ -38,13 +38,13 @@ The scanner, however, is game-agnostic—just change the `Game` parameter and it
 Visit the [live demo](http://176.57.188.166:5000/) to see SourceMapStats in action.
 
 > **Note:** By default the server binds **only to localhost** for safety.  
-> If you enable public mode (see below) you can replace `127.0.0.1` with your machine’s LAN or public IP.
+> If you enable public mode (see below) you can replace `127.0.0.1` with your machine's LAN or public IP.
 
 ---
 
 ## Quick start
 
-> Requires **Python 3.9+** (needed by Waitress ≥ 3.0) and **git**.
+> Requires **Python 3.9+** (needed by Waitress >= 3.0) and **git**.
 
 ### 1. Clone & install
 
@@ -54,24 +54,36 @@ cd SourceMapStats
 chmod +x run_app.sh
 ```
 
-### 2. Set your own API key
+### 2. Set your API keys
 
-`config_keys.json` ships with a **placeholder** key. Replace it with your own randomly-generated token **before** starting the server:
+SourceMapStats uses a `.env` file for configuration. It requires two keys:
+
+1. **`API_KEYS`** - Your own randomly-generated token(s) for API authentication
+2. **`STEAM_API_KEY`** - A Steam Web API key for fetching game server lists
 
 ```bash
-cp config_keys.json.example config_keys.json
-nano config_keys.json
+cp .env.example .env
+nano .env
 ```
 
-```json
-{
-  "accepted_keys": [
-    "CHANGEME-PUT-YOUR-RANDOM-KEY-HERE"
-  ]
-}
+```ini
+# API Keys for authentication (comma-separated for multiple keys)
+API_KEYS=CHANGEME-PUT-YOUR-RANDOM-KEY-HERE
+
+# Steam Web API key for fetching game server lists
+# Get one free at https://steamcommunity.com/dev/apikey
+STEAM_API_KEY=YOUR_STEAM_WEB_API_KEY
 ```
 
-Use at least 20–30 alphanumeric characters; dashes and underscores are allowed.
+**Getting a Steam Web API key:**
+1. Go to [https://steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey)
+2. Log in with your Steam account
+3. Register a new key (domain name can be anything, e.g., "localhost")
+4. Copy the key into your `.env` file
+
+> **Note:** The Steam API key is required for server scanning. Without it, the scanner cannot fetch the server list.
+
+For `accepted_keys`, use at least 20-30 alphanumeric characters; dashes and underscores are allowed.
 
 ### 3. Run the server
 
@@ -84,7 +96,7 @@ Open `http://localhost:5000` (same machine) or `http://<server-ip>:5000` if you 
 
 ### 4. Start the crawler from the UI
 
-1. Paste your API key into the **“API Key”** field in the right-hand sidebar.  
+1. Paste your API key into the **"API Key"** field in the right-hand sidebar.  
 2. Click **Start Scanning**.  
 3. Watch the status panel update and the chart populate.
 
@@ -114,7 +126,7 @@ A single constant at the top of **`app.py`** controls where Waitress binds:
 ################################################
 # --------------[ Bind Mode Toggle ]-----------#
 ################################################
-PUBLIC_MODE: bool = False  # ⟵ default (local-only)
+PUBLIC_MODE: bool = False  # <-- default (local-only)
 ```
 
 | Setting | Effect | Reachability |
@@ -143,7 +155,7 @@ PUBLIC_MODE: bool = False  # ⟵ default (local-only)
 ## Configuration
 
 You can tweak most parameters on-the-fly via the sidebar or `POST /api/update_params`.  
-**New in vX.Y:** you can also adjust how much days with more snapshots “count” by setting **BiasExponent** (default 1). Rankings and averages are computed using per-day weight = `snapshot_count^BiasExponent`.
+**New in vX.Y:** you can also adjust how much days with more snapshots "count" by setting **BiasExponent** (default 1). Rankings and averages are computed using per-day weight = `snapshot_count^BiasExponent`.
 
 | Key               | Type    | Default    | Description                                                                                       |
 |-------------------|---------|------------|---------------------------------------------------------------------------------------------------|
@@ -152,7 +164,7 @@ You can tweak most parameters on-the-fly via the sidebar or `POST /api/update_pa
 | `Start_Date`      | date    | wide range | Date window used when aggregating CSV rows (`YYYY-MM-DD`).                                        |
 | `End_Date`        | date    | wide range |                                                                                                   |
 | `OnlyMapsContaining` | str   | `"dr_"`    | Only include maps whose names contain this substring.                                             |
-| `FastWriteDelay`  | int     | `10`       | Minutes between “fast” scans.                                                                     |
+| `FastWriteDelay`  | int     | `10`       | Minutes between "fast" scans.                                                                     |
 | `RuntimeMinutes`  | int     | `60`       | How long (minutes) each continuous scanning session runs before resetting.                        |
 | `ColorIntensity`  | int     | `3`        | Controls color cycling intensity in Chart.js lines.                                               |
 | `BiasExponent`    | int     | `1`        | Exponent applied to `snapshot_count` when weighting days: >1 amplifies bias toward well-sampled days; <1 softens it. |
@@ -188,10 +200,11 @@ Install dependency: add `duckdb` to your Python environment (already present in 
 ## Security Recommendations
 
 1. Always change the default API key before first run  
-2. Use a strong firewall configuration if exposing publicly  
-3. Consider putting the service behind a reverse proxy  
-4. Monitor the `/api/status` and `/api/rate_limit` endpoints for abuse  
-5. Rate limit aggressive IPs at your network level  
+2. Keep your Steam Web API key private - do not commit it to version control  
+3. Use a strong firewall configuration if exposing publicly  
+4. Consider putting the service behind a reverse proxy  
+5. Monitor the `/api/status` and `/api/rate_limit` endpoints for abuse  
+6. Rate limit aggressive IPs at your network level  
 
 ---
 

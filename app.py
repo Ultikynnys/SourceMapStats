@@ -12,8 +12,10 @@ from functools import wraps
 import ast
 import mimetypes
 import pandas as pd
+import requests
 from flask import Flask, jsonify, request, g
 from waitress import serve
+from dotenv import load_dotenv
 
 import logging
 
@@ -30,7 +32,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, "pythonvalve"))
 sys.path.insert(0, os.path.join(BASE_DIR, "a2s"))
 import a2s
-from valve.source.master_server import MasterServerQuerier
+# Note: MasterServerQuerier is no longer used - Valve deprecated hl2master.steampowered.com
+# We now use the Steam Web API (IGameServersService/GetServerList) instead
 import numpy as np
 from flask.json.provider import DefaultJSONProvider
 
@@ -136,6 +139,22 @@ def init_db():
                 )
                 """
             )
+            
+            # Server cooldowns table for persistence across restarts
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS server_cooldowns (
+                    ip TEXT,
+                    port INTEGER,
+                    timeout DOUBLE,
+                    failures INTEGER,
+                    skip_until DOUBLE,
+                    updated_at TIMESTAMP,
+                    PRIMARY KEY (ip, port)
+                )
+                """
+            )
+            
             # One-time migration: import existing CSV if DB is empty
             try:
                 row = con.execute("SELECT count(*) FROM samples").fetchone()
@@ -176,14 +195,66 @@ def init_db():
     except Exception as e:
         logging.error(f"Failed to initialize DuckDB: {e}")
 
+def load_cooldowns_from_db():
+    """Load server cooldowns from database on startup."""
+    cooldowns = {}
+    try:
+        with duckdb.connect(DB_FILE, read_only=True) as con:
+            rows = con.execute(
+                "SELECT ip, port, timeout, failures, skip_until FROM server_cooldowns"
+            ).fetchall()
+            for ip, port, timeout, failures, skip_until in rows:
+                cooldowns[(ip, port)] = {
+                    'timeout': timeout,
+                    'failures': failures,
+                    'skip_until': skip_until
+                }
+            if cooldowns:
+                logging.info(f"Loaded {len(cooldowns)} server cooldowns from database")
+    except Exception as e:
+        logging.debug(f"Could not load cooldowns from DB: {e}")
+    return cooldowns
+
+def save_cooldowns_to_db(cooldowns):
+    """Save server cooldowns to database."""
+    if not cooldowns:
+        return
+    try:
+        with duckdb.connect(DB_FILE) as con:
+            # Batch upsert using INSERT OR REPLACE
+            now = datetime.now()
+            rows = [
+                (ip, port, data['timeout'], data['failures'], data['skip_until'], now)
+                for (ip, port), data in cooldowns.items()
+            ]
+            con.executemany(
+                """
+                INSERT OR REPLACE INTO server_cooldowns (ip, port, timeout, failures, skip_until, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                rows
+            )
+    except Exception as e:
+        logging.debug(f"Could not save cooldowns to DB: {e}")
+
 init_db()
 
 # ─── API-key support ──────────────────────────────────────────────────────────
-keys_file = os.path.join(BASE_DIR, 'config_keys.json')
-if not os.path.exists(keys_file):
-    raise RuntimeError("Missing config_keys.json!")
-with open(keys_file, 'r') as f:
-    ACCEPTED_KEYS = set(_json.load(f).get("accepted_keys", []))
+# Load environment variables from .env file
+load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# API keys for authentication (comma-separated in .env)
+_api_keys_str = os.getenv('API_KEYS', '')
+ACCEPTED_KEYS = set(k.strip() for k in _api_keys_str.split(',') if k.strip())
+
+# Steam API key for server list queries
+STEAM_API_KEY = os.getenv('STEAM_API_KEY', '')
+
+if not ACCEPTED_KEYS:
+    logging.warning("No API_KEYS found in .env file. API authentication will fail.")
+if not STEAM_API_KEY:
+    logging.warning("No STEAM_API_KEY found in .env file. Server scanning will be disabled.")
+    logging.info("Get a free Steam API key at: https://steamcommunity.com/dev/apikey")
 
 def sanitize_api_key(k):
     return re.sub(r'[^a-zA-Z0-9-_]', '', k)
@@ -614,40 +685,122 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     g_chart_data_cache[cache_key] = {'timestamp': time.time(), 'data': result}
     return result
 
-# --- Backend Scanner ---
+# Track timeout and failure count per server (ip:port)
+# Load from database on startup, save after each scan cycle
+server_cooldowns = load_cooldowns_from_db()
+MAX_SINGLE_IP_TIMEOUT = 60.0  # Max timeout after repeated failures
+BASE_SKIP_DURATION = 120  # First skip is 2 minutes, then doubles: 4min, 8min, 16min, etc.
+MAX_SKIP_DURATION = 3600  # Cap at 1 hour
 
-ip_timeouts = {}
-MAX_SINGLE_IP_TIMEOUT = 3.0
+def is_valid_public_ip(ip_str):
+    """Check if an IP address is a valid public IP (not link-local, private, etc.)."""
+    try:
+        parts = [int(p) for p in ip_str.split('.')]
+        if len(parts) != 4:
+            return False
+        # Filter out link-local (169.254.x.x)
+        if parts[0] == 169 and parts[1] == 254:
+            return False
+        # Filter out localhost
+        if parts[0] == 127:
+            return False
+        # Filter out 0.0.0.0
+        if all(p == 0 for p in parts):
+            return False
+        return True
+    except:
+        return False
 
 def IpReader(ip):
     """Query single game server, return CSV row or None."""
     ip_str, port = ip
-    timeout = ip_timeouts.get(ip_str, config["servertimeout"])
+    server_key = (ip_str, port)
+    now = time.time()
+    
+    # Get or initialize cooldown info for this server
+    cooldown = server_cooldowns.get(server_key, {
+        'timeout': config["servertimeout"],
+        'failures': 0,
+        'skip_until': 0
+    })
+    
+    # Skip if in cooldown period
+    if now < cooldown['skip_until']:
+        return None
+    
+    timeout = cooldown['timeout']
 
     try:
         info = a2s.info(ip, timeout=timeout)
         map_name = re.sub(r'[\r\n\x00-\x1F\x7F-\x9F]', '', info.map_name).strip()
         timestamp = datetime.now().strftime(ReaderTimeFormat)
-        ip_timeouts[ip_str] = max(0.1, timeout * 0.9)
+        
+        # Log successful connection
+        logging.info(f"OK {ip_str}:{port} | {info.player_count} players | {map_name}")
+        
+        # Success! Reduce timeout and reset failure count
+        server_cooldowns[server_key] = {
+            'timeout': max(0.1, timeout * 0.9),
+            'failures': 0,
+            'skip_until': 0
+        }
         return [ip_str, str(port), map_name, str(info.player_count), timestamp]
 
     except (socket.timeout, ConnectionResetError):
-        logging.warning(f"Timeout/Reset for {ip_str}:{port}")
-        ip_timeouts[ip_str] = min(MAX_SINGLE_IP_TIMEOUT, timeout * 1.5)
+        failures = cooldown['failures'] + 1
+        new_timeout = min(MAX_SINGLE_IP_TIMEOUT, timeout * 2)  # Double timeout on failure
+        
+        # Exponential backoff: 2min, 4min, 8min, 16min, etc.
+        skip_duration = min(MAX_SKIP_DURATION, BASE_SKIP_DURATION * (2 ** (failures - 1)))
+        skip_until = now + skip_duration
+        logging.debug(f"Timeout for {ip_str}:{port} (failure #{failures}, skip for {skip_duration}s)")
+        
+        server_cooldowns[server_key] = {
+            'timeout': new_timeout,
+            'failures': failures,
+            'skip_until': skip_until
+        }
         return None
+        
     except Exception as e:
-        logging.warning(f"Error for {ip_str}:{port}: {str(e)}")
+        failures = cooldown['failures'] + 1
+        new_timeout = min(MAX_SINGLE_IP_TIMEOUT, timeout * 2)
+        
+        # Exponential backoff: 2min, 4min, 8min, 16min, etc.
+        skip_duration = min(MAX_SKIP_DURATION, BASE_SKIP_DURATION * (2 ** (failures - 1)))
+        skip_until = now + skip_duration
+        
+        logging.debug(f"Error for {ip_str}:{port}: {str(e)}")
+        
+        server_cooldowns[server_key] = {
+            'timeout': new_timeout,
+            'failures': failures,
+            'skip_until': skip_until
+        }
         return None
 
 def IpReaderMulti(lst, snapshot_id):
     """Process a list of IPs and append a snapshot_id."""
     out = []
-    total = len(lst)
-    for i, ip in enumerate(lst, 1):
-        # logging.info(f"Querying IP {i}/{total}: {ip[0]}:{ip[1]}") # This is too verbose
+    skipped = 0
+    
+    # Filter out invalid IPs first
+    valid_servers = [(ip, port) for ip, port in lst if is_valid_public_ip(ip)]
+    filtered_count = len(lst) - len(valid_servers)
+    if filtered_count > 0:
+        logging.info(f"Filtered out {filtered_count} invalid/link-local addresses")
+    
+    total = len(valid_servers)
+    for i, ip in enumerate(valid_servers, 1):
         row = IpReader(ip)
         if row:
             out.append(row + [snapshot_id])
+        elif server_cooldowns.get((ip[0], ip[1]), {}).get('skip_until', 0) > time.time():
+            skipped += 1
+    
+    if skipped > 0:
+        logging.info(f"Skipped {skipped} servers in cooldown")
+    
     return out
 
 # --- GeoIP ---
@@ -727,15 +880,107 @@ def write_to_csv(rows):
         logging.error(f"Failed to write to DuckDB: {e}")
 
 def get_server_list():
-    """Fetches the server list from the Valve master server."""
-    all_servers = []
+    """Fetches the server list from the Steam Web API.
+    
+    Note: The old Valve master server (hl2master.steampowered.com) was deprecated.
+    This uses the Steam Web API IGameServersService/GetServerList endpoint instead.
+    Requires a Steam Web API key in config_keys.json.
+    
+    The API has a limit of ~10,000 servers per request. To get more servers,
+    we make multiple requests with different region filters and deduplicate.
+    """
+    all_servers = set()  # Use set to auto-deduplicate
+    
+    # Use Steam API key from environment
+    if not STEAM_API_KEY:
+        logging.error("STEAM_API_KEY not found in .env file. Server scanning disabled.")
+        logging.info("Get a free Steam API key at: https://steamcommunity.com/dev/apikey")
+        return []
+    
     try:
-        with MasterServerQuerier() as msq:
-            all_servers = list(msq.find(gamedir="tf"))
-        logging.info(f"Fetched {len(all_servers)} servers from master server.")
+        # Map game shortname to app ID
+        game_appids = {
+            "tf": 440,      # Team Fortress 2
+            "csgo": 730,    # CS:GO
+            "cs2": 730,     # CS2
+            "cstrike": 10,  # Counter-Strike 1.6
+            "dod": 30,      # Day of Defeat
+            "hl2dm": 320,   # Half-Life 2: Deathmatch
+            "l4d": 500,     # Left 4 Dead
+            "l4d2": 550,    # Left 4 Dead 2
+        }
+        
+        game = config.get("Game", "tf")
+        appid = game_appids.get(game, 440)  # Default to TF2
+        
+        # Steam Web API endpoint for game servers
+        url = "https://api.steampowered.com/IGameServersService/GetServerList/v1/"
+        
+        # Query by different regions to bypass the ~10k limit per request
+        # Region codes: https://developer.valvesoftware.com/wiki/Master_Server_Query_Protocol
+        regions = [
+            ("us", "\\region\\0"),   # US East
+            ("usw", "\\region\\1"),  # US West  
+            ("sa", "\\region\\2"),   # South America
+            ("eu", "\\region\\3"),   # Europe
+            ("asia", "\\region\\4"), # Asia
+            ("au", "\\region\\5"),   # Australia
+            ("me", "\\region\\6"),   # Middle East
+            ("af", "\\region\\7"),   # Africa
+            ("world", ""),           # Unfiltered (catches any missed)
+        ]
+        
+        for region_name, region_filter in regions:
+            try:
+                # Use both appid AND gamedir filters for reliable game filtering
+                filter_str = f"\\appid\\{appid}\\gamedir\\{game}{region_filter}"
+                params = {
+                    "key": STEAM_API_KEY,
+                    "filter": filter_str,
+                    "limit": 20000  # Request max allowed
+                }
+                
+                response = requests.get(url, params=params, timeout=config.get("timeout_master", 60))
+                response.raise_for_status()
+                
+                data = response.json()
+                servers = data.get("response", {}).get("servers", [])
+                
+                region_count = 0
+                for server in servers:
+                    # Validate that server is for the correct game
+                    server_appid = server.get("appid", 0)
+                    server_gamedir = server.get("gamedir", "")
+                    
+                    # Only add if it matches our game (double-check the API filter worked)
+                    if server_appid != appid and server_gamedir.lower() != game.lower():
+                        continue
+                    
+                    addr = server.get("addr", "")
+                    if ":" in addr:
+                        ip, port = addr.rsplit(":", 1)
+                        # Skip invalid/link-local IPs at the source
+                        if not is_valid_public_ip(ip):
+                            continue
+                        try:
+                            all_servers.add((ip, int(port)))
+                            region_count += 1
+                        except ValueError:
+                            continue
+                
+                logging.debug(f"Region {region_name}: found {region_count} {game} servers")
+                
+            except requests.exceptions.Timeout:
+                logging.warning(f"Steam API request timed out for region {region_name}")
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"Failed to fetch servers for region {region_name}: {e}")
+        
+        logging.info(f"Fetched {len(all_servers)} unique servers from Steam Web API (across all regions).")
+        
     except Exception as e:
-        logging.error(f"Failed to fetch server list from master server: {e}")
-    return all_servers
+        logging.error(f"Failed to fetch server list from Steam Web API: {e}")
+    
+    return list(all_servers)
 
 def scan_loop():
     """The main loop for continuously scanning servers."""
@@ -752,6 +997,9 @@ def scan_loop():
 
         results = IpReaderMulti(server_list, snapshot_id)
         write_to_csv(results)
+        
+        # Persist cooldowns to database
+        save_cooldowns_to_db(server_cooldowns)
         
         logging.info(f"Scan cycle complete. Wrote {len(results)} rows. Waiting for next cycle.")
         time.sleep(300)

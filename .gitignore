@@ -18,3 +18,4 @@ stats.log
 ip_timeouts.json
 *.duckdb
 config_keys.json
+.env
