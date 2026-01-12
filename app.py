@@ -16,6 +16,7 @@ import requests
 from flask import Flask, jsonify, request, g
 from waitress import serve
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor
 
 import logging
 
@@ -41,6 +42,7 @@ from flask.json.provider import DefaultJSONProvider
 # ─── basic constants ──────────────────────────────────────────────────────────
 PUBLIC_MODE           = True           # False → bind 127.0.0.1
 MAX_SINGLE_IP_TIMEOUT = 1.0            # hard clamp per server query
+SCAN_THREADS          = 100            # Number of threads for parallel scanning
 ReaderTimeFormat      = "%Y-%m-%d-%H:%M:%S"
 
 
@@ -111,10 +113,10 @@ config = {
     "OnlyMapsContaining": ["dr_"],
     "IpBlackList":        ['94.226.97.69'],
     "Percision":          2,
-    "timeout_query":      0.5,
+    "timeout_query":      1.0,
     "timeout_master":     60,
     "regionserver":       "all",
-    "servertimeout":      0.4
+    "servertimeout":      2.0
 }
 
 # --- Constants derived from config ---
@@ -780,7 +782,7 @@ def IpReader(ip):
         return None
 
 def IpReaderMulti(lst, snapshot_id):
-    """Process a list of IPs and append a snapshot_id."""
+    """Process a list of IPs and append a snapshot_id using multiple threads."""
     out = []
     skipped = 0
     
@@ -790,14 +792,26 @@ def IpReaderMulti(lst, snapshot_id):
     if filtered_count > 0:
         logging.info(f"Filtered out {filtered_count} invalid/link-local addresses")
     
-    total = len(valid_servers)
-    for i, ip in enumerate(valid_servers, 1):
-        row = IpReader(ip)
-        if row:
-            out.append(row + [snapshot_id])
-        elif server_cooldowns.get((ip[0], ip[1]), {}).get('skip_until', 0) > time.time():
-            skipped += 1
-    
+    # Use ThreadPoolExecutor to parallelize scanning
+    with ThreadPoolExecutor(max_workers=SCAN_THREADS) as executor:
+        futures = {executor.submit(IpReader, ip): ip for ip in valid_servers}
+        
+        for future in futures:
+            try:
+                row = future.result()
+                if row:
+                    out.append(row + [snapshot_id])
+                else:
+                    # Check if it was skipped due to cooldown (IpReader returns None for both timeout and cooldown)
+                    # We can't distinguish easily here without changing IpReader, but strictly speaking
+                    # IpReader logs the reason. For the count, we can check the cooldown dict.
+                    # Note: IpReader updates server_cooldowns internally.
+                    ip_tuple = futures[future]
+                    if server_cooldowns.get(ip_tuple, {}).get('skip_until', 0) > time.time():
+                        skipped += 1
+            except Exception as e:
+                logging.error(f"Thread error: {e}")
+
     if skipped > 0:
         logging.info(f"Skipped {skipped} servers in cooldown")
     
