@@ -201,7 +201,7 @@ def load_cooldowns_from_db():
     """Load server cooldowns from database on startup."""
     cooldowns = {}
     try:
-        with duckdb.connect(DB_FILE, read_only=True) as con:
+        with duckdb.connect(DB_FILE) as con:
             rows = con.execute(
                 "SELECT ip, port, timeout, failures, skip_until FROM server_cooldowns"
             ).fetchall()
@@ -325,7 +325,7 @@ def get_color(i: int, total: int, intensity: int) -> str:
 def get_data_freshness():
     """Returns the timestamp of the last data update."""
     try:
-        with duckdb.connect(DB_FILE, read_only=True) as con:
+        with duckdb.connect(DB_FILE) as con:
             row = con.execute("SELECT max(timestamp) FROM samples").fetchone()
             latest = row[0] if row else None
             if not latest:
@@ -344,7 +344,7 @@ def get_data_freshness():
 def get_date_range():
     """Returns the earliest and latest timestamps in the data."""
     try:
-        with duckdb.connect(DB_FILE, read_only=True) as con:
+        with duckdb.connect(DB_FILE) as con:
             row = con.execute("SELECT min(timestamp), max(timestamp) FROM samples").fetchone()
             if not row or row[0] is None or row[1] is None:
                 return {"min_date": None, "max_date": None}
@@ -386,7 +386,7 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     logging.info("Generating new chart data...")
 
     try:
-        with duckdb.connect(DB_FILE, read_only=True) as con:
+        with duckdb.connect(DB_FILE) as con:
             # Determine max date in DB
             row = con.execute("SELECT max(timestamp) FROM samples").fetchone()
             max_date_in_data = row[0] if row else None
