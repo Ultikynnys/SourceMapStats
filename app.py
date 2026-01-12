@@ -550,14 +550,22 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
         srv['avg_contrib'] = (srv['players'] / srv['snapshots']).fillna(0)
         srv['server'] = srv['ip'] + ':' + srv['port'].astype(str)
 
-        # Pivot to dates x servers matrix and align to the full date_range
+        # Pivot to dates x servers matrix
         pivot = srv.pivot_table(index='date', columns='server', values='avg_contrib', aggfunc='sum')
+
+        # Calculate means based on available data ONLY (before reindexing with 0s)
+        # This prevents days with no data (e.g. scraper down) from dragging down the average.
+        if pivot.shape[1] > 0:
+            means = pivot.mean(axis=0).sort_values(ascending=False)
+        else:
+            means = pd.Series([], dtype=float)
+
+        # Now align to the full date_range for plotting
         pivot = pivot.reindex(date_range.date, fill_value=0)
 
-        # Select top N servers by mean contribution across the window
+        # Select top N servers by mean contribution
         top_n = min(int(top_servers or 10), pivot.shape[1])
         if top_n > 0:
-            means = pivot.mean(axis=0).sort_values(ascending=False)
             top_servers = list(means.head(top_n).index)
             # Build server ranking using the same top_n and include 'Other' if applicable
             server_ranking = [{ 'label': srv, 'pop': round(float(means[srv]), 2) } for srv in top_servers]
@@ -642,6 +650,7 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
         srv_w['avg_contrib'] = (srv_w['players'] / srv_w['snapshots']).fillna(0)
         srv_w['server'] = srv_w['ip'] + ':' + srv_w['port'].astype(str)
         pivot_w = srv_w.pivot_table(index='date', columns='server', values='avg_contrib', aggfunc='sum')
+        # Calculate means before reindexing here too
         means_w = pivot_w.mean(axis=0).sort_values(ascending=False) if pivot_w.shape[1] > 0 else pd.Series([], dtype=float)
         top_n_w = min(10, len(means_w))
         global_server_ranking = [{ 'label': srv, 'pop': round(float(means_w[srv]), 2) } for srv in list(means_w.head(top_n_w).index)]
