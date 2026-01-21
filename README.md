@@ -1,5 +1,7 @@
 ﻿# SourceMapStats
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/r60dr60d) 
+
 **SourceMapStats** is an end-to-end statistics dashboard for Valve Source / GoldSource games.  
 It periodically queries public game servers, stores per-map player counts in a DuckDB database, and serves an interactive Chart.js dashboard so you can explore which maps are really being played over time.
 
@@ -187,6 +189,14 @@ Access at `/admin` (only from whitelisted IPs). Shows:
 - Total daily requests
 - Unique IPs today
 - Per-IP endpoint breakdown
+
+Using the admin panel API (whitelisted IPs only):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| **GET** | `/api/admin/stats` | JSON request statistics for the day. |
+| **GET** | `/api/admin/check` | Returns `{ is_admin: bool }` for the requester. |
+| **GET** | `/debug-whoami` | Debug endpoint to dump request headers/IPs. |
 
 ---
 
