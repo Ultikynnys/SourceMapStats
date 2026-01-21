@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - SourceMapStats</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #121212;
+            color: #e0e0e0;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #f39c12;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #f39c12;
+            padding-bottom: 0.5rem;
+        }
+
+        h2 {
+            color: #f39c12;
+            margin: 1.5rem 0 1rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: #1e1e1e;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #333;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #f39c12;
+        }
+
+        .stat-label {
+            color: #888;
+            margin-top: 0.5rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #1e1e1e;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th,
+        td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #333;
+        }
+
+        th {
+            background: #2c2c2c;
+            color: #f39c12;
+        }
+
+        tr:hover {
+            background: #2c2c2c;
+        }
+
+        .endpoint-list {
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        .endpoint-item {
+            display: inline-block;
+            background: #333;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            margin: 0.2rem;
+        }
+
+        .refresh-btn {
+            background: #f39c12;
+            color: #fff;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .refresh-btn:hover {
+            background: #d35400;
+        }
+
+        .last-update {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        .back-link {
+            color: #f39c12;
+            text-decoration: none;
+            margin-bottom: 1rem;
+            display: inline-block;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .summary-row {
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Back to Dashboard</a>
+        <h1>Admin Panel</h1>
+
+        <button class="refresh-btn">Refresh Stats</button>
+        <div class="last-update" id="lastUpdate"></div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalRequests">-</div>
+                <div class="stat-label">Total Requests Today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="uniqueIps">-</div>
+                <div class="stat-label">Unique IPs Today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="currentDate">-</div>
+                <div class="stat-label">Current Date</div>
+            </div>
+        </div>
+
+        <h2>Requests by IP</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>IP Address</th>
+                    <th>Total Requests</th>
+                    <th>Endpoints</th>
+                </tr>
+            </thead>
+            <tbody id="ipTable">
+                <tr>
+                    <td colspan="3">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="/static/admin.js"></script>
+</body>
+
+</html>

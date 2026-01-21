@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Source Map Stats Visualization</title>
+
+  <!-- Main stylesheet -->
+  <link rel="stylesheet" href="/static/styles.css">
+
+  <!-- Inline CSS to fix chart sizing and error display -->
+  <style>
+    .chart-box {
+      overflow-x: auto;
+      position: relative;
+    }
+
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 400px;
+      margin: 0 auto;
+      transition: height 0.3s ease, margin 0.3s ease, visibility 0.3s ease;
+    }
+
+    .chart-container.empty {
+      height: 0;
+      visibility: hidden;
+      margin-top: 0 !important;
+    }
+
+    .chart-container canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+
+    #loadingIndicator {
+      display: none;
+      color: #f39c12;
+      font-size: 1.2em;
+      padding: 20px;
+    }
+
+    #dataErrors p {
+      margin: 0;
+      color: #e74c3c;
+      font-weight: bold;
+    }
+  </style>
+
+  <!-- Chart.js (pinned version) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script
+    src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <!-- Optional Octocat loader -->
+  <script src="/static/octocat-loader.js"></script>
+</head>
+
+<body>
+  <div id="dataFreshness">Latest data: Unknown</div>
+  <div class="container">
+    <header>
+      <h1>Source Map Stats Visualization</h1>
+    </header>
+
+    <div class="chart-params-container">
+
+      <!-- LEFT — Ranking list -->
+      <section class="ranking-section">
+        <h2>Ranking</h2>
+        <ol id="mapRanking"></ol>
+        <h2 style="margin-top:1rem;">Server Ranking</h2>
+        <ol id="serverRanking"></ol>
+        <div id="serverRankingTotal" class="ranking-total"></div>
+      </section>
+
+      <!-- MIDDLE — Charts + Status -->
+      <div class="chart-status-section">
+
+        <!-- Chart box -->
+        <section class="chart-box">
+
+          <!-- Sanity check output -->
+          <div id="dataErrors"></div>
+
+          <!-- Chart overlay (shown while loading) -->
+          <div id="chartOverlay" class="chart-overlay" style="display:none;">
+            <div class="spinner"></div>
+            <div class="overlay-text">Loading…</div>
+          </div>
+
+          <!-- Main share-of-day chart -->
+          <div class="chart-container main-chart">
+            <canvas id="chartCanvas"></canvas>
+          </div>
+          <div class="chart-container mt-4">
+            <canvas id="totalPlayersChart"></canvas>
+          </div>
+
+          <!-- Snapshots-per-day chart -->
+          <div class="chart-container secondary-chart">
+            <canvas id="snapshotChartCanvas"></canvas>
+          </div>
+
+          <!-- Text below charts -->
+          <p id="playerCountDisplay"></p>
+        </section>
+
+
+
+      </div>
+
+      <!-- RIGHT — Runtime Parameters -->
+      <section class="params-section">
+        <h2>Parameters</h2>
+        <form id="paramsForm">
+          <div class="form-group">
+            <label for="MapsToShow">Maps To Show</label>
+            <select id="MapsToShow" name="maps_to_show">
+              <option>1</option>
+              <option>2</option>
+              <option>3</option>
+              <option>4</option>
+              <option>5</option>
+              <option>6</option>
+              <option>7</option>
+              <option>8</option>
+              <option>9</option>
+              <option selected>10</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="TopServers">Top Servers</label>
+            <input type="number" id="TopServers" name="top_servers" value="10" min="1" max="50">
+          </div>
+          <div class="form-group">
+            <label for="ServerFilter">Server Filter</label>
+            <select id="ServerFilter" name="server_filter">
+              <option value="ALL" selected>ALL</option>
+            </select>
+          </div>
+          <div class="form-group start-date-group">
+            <label for="StartDateInput">Start Date</label>
+            <input type="date" id="StartDateInput" name="start_date">
+          </div>
+          <div class="form-group end-date-group">
+            <label for="EndDateInput">End Date</label>
+            <input type="date" id="EndDateInput" name="end_date">
+          </div>
+          <input type="hidden" id="DaysToShow" name="days_to_show" value="7">
+          <div class="form-group" style="display:none;">
+            <label for="DaysToShow">Days to Show</label>
+            <input type="number" id="DaysToShow" name="days_to_show" value="7" min="1" max="365">
+          </div>
+          <div class="form-group">
+            <label for="OnlyMapsContaining">Only Maps Containing</label>
+            <input type="text" id="OnlyMapsContaining" name="only_maps_containing" value="dr_">
+          </div>
+          <div class="form-group">
+            <label for="AppendMapsContaining">Append Maps Containing</label>
+            <input type="text" id="AppendMapsContaining" name="append_maps_containing" value="">
+            <small>Comma-separated substrings. Matching maps will be appended to the ranking and drawn in the
+              chart.</small>
+          </div>
+          <div class="form-group">
+            <label for="ColorIntensity">Color Intensity</label>
+            <input type="number" id="ColorIntensity" name="color_intensity" value="3">
+          </div>
+          <div class="form-group">
+            <label class="sr-only" for="refreshChart">Refresh</label>
+            <button id="refreshChart" type="button" class="btn">Refresh Chart</button>
+          </div>
+        </form>
+      </section>
+
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-content">
+      <p class="description">
+        <strong>SourceMapStats</strong> — queries the Steam Master Server,
+        aggregates player counts per map, and renders the results.
+      </p>
+      <p class="copyright"> Ultikynnys 2025</p>
+    </div>
+  </footer>
+
+  <script src="/static/main.js"></script>
+</body>
+
+</html>

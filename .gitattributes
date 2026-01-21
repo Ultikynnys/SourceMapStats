@@ -1,0 +1,11 @@
+# Normalize line endings by file type
+# Shell scripts must be LF or they will fail on Linux with bash\r errors
+*.sh text eol=lf
+
+# Windows scripts should use CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Everything else text auto-normalized by Git
+* text=auto

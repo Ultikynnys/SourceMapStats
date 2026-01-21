@@ -1,0 +1,11 @@
+.cache/
+.tox/
+_build/
+build/
+dist/
+htmlcov/
+
+.coverage
+
+*.pyc
+*.egg*
