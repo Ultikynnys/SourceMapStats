@@ -131,8 +131,17 @@ def init_admin_db():
                 con.execute(f"DROP SEQUENCE IF EXISTS seq_req_id")
                 con.execute(f"CREATE SEQUENCE seq_req_id START {max_id + 1}")
                 logging.info(f"Admin DB sequence reset to {max_id + 1}")
+                
+                # Cleanup and Vacuum on boot
+                # This ensures the file is minimal size even if previous runs bloated it
+                cutoff = datetime.now() - timedelta(days=30)
+                con.execute("DELETE FROM request_log WHERE timestamp < ?", [cutoff])
+                con.execute("VACUUM")
+                con.execute("CHECKPOINT")
+                logging.info("Admin DB vacuumed on startup.")
+                
             except Exception as e:
-                logging.error(f"Failed to reset admin sequence: {e}")
+                logging.error(f"Failed to reset/vacuum admin DB: {e}")
     except Exception as e:
         logging.error(f"Failed to init admin DB: {e}")
 
