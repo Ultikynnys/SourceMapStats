@@ -208,23 +208,39 @@ def save_cooldowns_to_db(cooldowns):
     try:
         with duckdb.connect(DB_FILE) as con:
             now = datetime.now()
-            rows = [
-                (ip, port, data['timeout'], data['failures'], data['skip_until'], now)
-                for (ip, port), data in cooldowns.items()
+            # Convert dict to list of dicts for DataFrame creation
+            data = [
+                {
+                    'ip': ip,
+                    'port': port,
+                    'timeout': d['timeout'],
+                    'failures': d['failures'],
+                    'skip_until': d['skip_until'],
+                    'updated_at': now
+                }
+                for (ip, port), d in cooldowns.items()
             ]
-            con.executemany(
+            
+            if not data:
+                return
+
+            df = pd.DataFrame(data)
+            
+            # Bulk insert using DuckDB's direct DataFrame integration
+            con.execute(
                 """
-                INSERT OR REPLACE INTO server_cooldowns (ip, port, timeout, failures, skip_until, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                rows
+                INSERT OR REPLACE INTO server_cooldowns 
+                SELECT * FROM df
+                """
             )
+            
     except Exception as e:
         logging.debug(f"Could not save cooldowns to DB: {e}")
 
 def save_server_names_to_db(rows):
     if not rows:
         return
+    
     server_updates = []
     now = datetime.now()
     for row in rows:
@@ -234,7 +250,7 @@ def save_server_names_to_db(rows):
                 port = int(row[1])
                 name = row[5]
                 if name:
-                    server_updates.append((ip, port, name, now))
+                    server_updates.append({'ip': ip, 'port': port, 'name': name, 'updated_at': now})
         except Exception:
             continue
 
@@ -243,12 +259,14 @@ def save_server_names_to_db(rows):
 
     try:
         with duckdb.connect(DB_FILE) as con:
-            con.executemany(
+            df = pd.DataFrame(server_updates)
+            
+            # Bulk insert using DuckDB's direct DataFrame integration
+            con.execute(
                 """
-                INSERT OR REPLACE INTO server_names (ip, port, name, updated_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                server_updates
+                INSERT OR REPLACE INTO server_names 
+                SELECT * FROM df
+                """
             )
     except Exception as e:
         logging.error(f"Failed to update server names in DuckDB: {e}")
