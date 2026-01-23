@@ -46,9 +46,9 @@ DEFAULT_CHART_PARAMS = {
     'server_filter': 'ALL',
 }
 
-def init_db():
+def init_db(db_path=DB_FILE):
     try:
-        with duckdb.connect(DB_FILE) as con:
+        with duckdb.connect(db_path) as con:
             # 1. Create Normalized Tables
             con.execute("""
                 CREATE SEQUENCE IF NOT EXISTS seq_servers START 1;
@@ -172,9 +172,71 @@ def init_db():
         logging.error(f"Failed to initialize DuckDB: {e}")
     
     # Always sync replica on startup to ensure schema changes propagate
-    if os.path.exists(DB_FILE):
+    # Always sync replica on startup to ensure schema changes propagate
+    if os.path.exists(db_path) and db_path == DB_FILE:
         update_replica_db()
         load_server_names_from_db()
+
+def rebuild_database():
+    """
+    Creates a new database file, copies all data from the old one,
+    and replaces the old file. This forces full compaction.
+    """
+    NEW_DB = os.path.join(BASE_DIR, "sourcemapstats_new.duckdb")
+    
+    if os.path.exists(NEW_DB):
+        try:
+            os.remove(NEW_DB)
+        except Exception:
+            logging.error(f"Cannot remove temp DB {NEW_DB}, aborting rebuild.")
+            return
+
+    logging.info("Rebuilding database to reclaim space...")
+    
+    try:
+        # Initialize schema in new DB using the common init function
+        init_db(NEW_DB)
+        
+        with duckdb.connect(NEW_DB) as con_new:
+            # Attach old DB to read from it
+            con_new.execute(f"ATTACH '{DB_FILE}' AS old_db")
+            
+            logging.info("Copying tables...")
+            
+            # Copy Table Data
+            tables_to_copy = ['servers', 'maps', 'snaps', 'samples_v2', 'server_cooldowns', 'server_names']
+            
+            for tbl in tables_to_copy:
+                try:
+                    con_new.execute(f"INSERT INTO {tbl} SELECT * FROM old_db.{tbl}")
+                except Exception as e:
+                    logging.warning(f"Could not copy table {tbl}: {e}")
+            
+            con_new.execute("DETACH old_db")
+            
+        # Swap files
+        # We need to ensure no other connections are open. The scanner is single threaded mostly,
+        # but the chart worker might be reading replica (good thing it reads replica).
+        # We should rename old to backup, new to live.
+        
+        BACKUP_DB = DB_FILE + ".bak"
+        if os.path.exists(BACKUP_DB):
+            os.remove(BACKUP_DB)
+            
+        os.rename(DB_FILE, BACKUP_DB)
+        os.rename(NEW_DB, DB_FILE)
+        
+        logging.info(f"Database rebuild complete. Old size: {os.path.getsize(BACKUP_DB) / 1024 / 1024:.2f}MB, New size: {os.path.getsize(DB_FILE) / 1024 / 1024:.2f}MB")
+        
+        # Sync replica immediately
+        update_replica_db()
+        
+    except Exception as e:
+        logging.error(f"Rebuild failed: {e}")
+        # Cleanup
+        if os.path.exists(NEW_DB):
+            os.remove(NEW_DB)
+
 
 def maintenance():
     """Run VACUUM and CHECKPOINT to reclaim disk space."""

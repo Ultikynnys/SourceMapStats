@@ -19,7 +19,8 @@ from database import (
     DB_FILE,
     ReaderTimeFormat,
     get_recent_ips,
-    maintenance
+    maintenance,
+    rebuild_database
 )
 from steam_api import get_server_list
 from utils import is_valid_public_ip, sanitize_server_name
@@ -147,8 +148,8 @@ def scan_loop():
     logging.info("Initializing served cache from existing data...")
     refresh_served_cache()
     
-    logging.info("Running initial database maintenance...")
-    maintenance()
+    logging.info("Running initial database rebuild/compaction...")
+    rebuild_database()
 
     cycles_count = 0
     while True:
