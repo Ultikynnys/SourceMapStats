@@ -848,7 +848,13 @@ def get_recent_ips(days=7):
         with duckdb.connect(DB_FILE) as con:
             cutoff = (datetime.now() - pd.Timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
             rows = con.execute(
-                "SELECT DISTINCT ip, port FROM samples WHERE timestamp >= ?",
+                """
+                SELECT DISTINCT s.ip, s.port 
+                FROM samples_v2 sa
+                JOIN snaps sn ON sa.snapshot_id = sn.id
+                JOIN servers s ON sa.server_id = s.id
+                WHERE sn.timestamp >= ?
+                """,
                 [cutoff]
             ).fetchall()
             return [(r[0], int(r[1])) for r in rows]
