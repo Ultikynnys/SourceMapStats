@@ -214,10 +214,18 @@ def rebuild_database():
             
             con_new.execute("DETACH old_db")
             
-            # Reset sequences to match max id
-            con_new.execute("SELECT setval('seq_servers', (SELECT max(id) FROM servers))")
-            con_new.execute("SELECT setval('seq_maps', (SELECT max(id) FROM maps))")
-            con_new.execute("SELECT setval('seq_snapshots', (SELECT max(id) FROM snaps))")
+            # Reset sequences to match max id (DuckDB doesn't always have setval, so we recreate)
+            max_server_id = con_new.execute("SELECT max(id) FROM servers").fetchone()[0] or 0
+            con_new.execute(f"DROP SEQUENCE IF EXISTS seq_servers")
+            con_new.execute(f"CREATE SEQUENCE seq_servers START {max_server_id + 1}")
+
+            max_map_id = con_new.execute("SELECT max(id) FROM maps").fetchone()[0] or 0
+            con_new.execute(f"DROP SEQUENCE IF EXISTS seq_maps")
+            con_new.execute(f"CREATE SEQUENCE seq_maps START {max_map_id + 1}")
+
+            max_snap_id = con_new.execute("SELECT max(id) FROM snaps").fetchone()[0] or 0
+            con_new.execute(f"DROP SEQUENCE IF EXISTS seq_snapshots")
+            con_new.execute(f"CREATE SEQUENCE seq_snapshots START {max_snap_id + 1}")
             
         # Swap files
         # We need to ensure no other connections are open. The scanner is single threaded mostly,

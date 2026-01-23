@@ -123,6 +123,16 @@ def init_admin_db():
                 );
                 CREATE SEQUENCE IF NOT EXISTS seq_req_id START 1;
             """)
+            
+            # Auto-repair sequence on startup (prod safety)
+            # Find max ID and ensure sequence is ahead of it
+            try:
+                max_id = con.execute("SELECT max(id) FROM request_log").fetchone()[0] or 0
+                con.execute(f"DROP SEQUENCE IF EXISTS seq_req_id")
+                con.execute(f"CREATE SEQUENCE seq_req_id START {max_id + 1}")
+                logging.info(f"Admin DB sequence reset to {max_id + 1}")
+            except Exception as e:
+                logging.error(f"Failed to reset admin sequence: {e}")
     except Exception as e:
         logging.error(f"Failed to init admin DB: {e}")
 
