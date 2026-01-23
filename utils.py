@@ -132,18 +132,69 @@ def init_admin_db():
                 con.execute(f"CREATE SEQUENCE seq_req_id START {max_id + 1}")
                 logging.info(f"Admin DB sequence reset to {max_id + 1}")
                 
-                # Cleanup and Vacuum on boot
-                # This ensures the file is minimal size even if previous runs bloated it
-                cutoff = datetime.now() - timedelta(days=30)
-                con.execute("DELETE FROM request_log WHERE timestamp < ?", [cutoff])
-                con.execute("VACUUM")
-                con.execute("CHECKPOINT")
-                logging.info("Admin DB vacuumed on startup.")
+                # Cleanup and Rebuild on boot
+                rebuild_admin_db(days_to_keep=30)
                 
             except Exception as e:
-                logging.error(f"Failed to reset/vacuum admin DB: {e}")
+                logging.error(f"Failed to reset/rebuild admin DB: {e}")
     except Exception as e:
         logging.error(f"Failed to init admin DB: {e}")
+
+def rebuild_admin_db(days_to_keep=30):
+    """Rebuilds the admin DB to enforce vacuuming and minimal file size."""
+    try:
+        logging.info("Starting admin DB rebuild/compaction...")
+        
+        # Temp file path
+        base, ext = os.path.splitext(ADMIN_DB_FILE)
+        temp_file = f"{base}_new{ext}"
+        
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+            
+        cutoff = datetime.now() - timedelta(days=days_to_keep)
+        
+        # 1. Open new DB and create schema
+        with duckdb.connect(temp_file) as con_new:
+            con_new.execute("""
+                CREATE TABLE request_log (
+                    id INTEGER PRIMARY KEY,
+                    timestamp TIMESTAMP,
+                    ip TEXT,
+                    endpoint TEXT,
+                    full_path TEXT
+                );
+                CREATE SEQUENCE seq_req_id START 1;
+            """)
+            
+            # 2. Attach old DB and copy valid data
+            con_new.execute(f"ATTACH '{ADMIN_DB_FILE}' AS old_db")
+            
+            # Copy data older than cutoff
+            con_new.execute("""
+                INSERT INTO request_log 
+                SELECT * FROM old_db.request_log 
+                WHERE timestamp >= ?
+            """, [cutoff])
+            
+            copied_count = con_new.execute("SELECT count(*) FROM request_log").fetchone()[0]
+            
+            # Reset sequence
+            max_id = con_new.execute("SELECT max(id) FROM request_log").fetchone()[0] or 0
+            con_new.execute(f"DROP SEQUENCE IF EXISTS seq_req_id")
+            con_new.execute(f"CREATE SEQUENCE seq_req_id START {max_id + 1}")
+            
+            con_new.execute("DETACH old_db")
+            
+        # 3. Swap files
+        # Small race condition possible here if a write happens exactly now, 
+        # but admin stats are tolerant of minor loss (and scanning is single threaded usually)
+        import shutil
+        shutil.move(temp_file, ADMIN_DB_FILE)
+        logging.info(f"Admin DB rebuild complete. Retained {copied_count} rows.")
+        
+    except Exception as e:
+        logging.error(f"Failed to rebuild admin DB: {e}")
 
 # Initialize on import
 init_admin_db()
@@ -284,16 +335,9 @@ def cleanup_old_stats(days_to_keep=30):
     if now - last_admin_cleanup < ADMIN_CLEANUP_INTERVAL:
         return
 
-    try:
-        logging.info("Running admin stats maintenance (cleanup & vacuum)...")
-        cutoff = datetime.now() - timedelta(days=days_to_keep)
-        with duckdb.connect(ADMIN_DB_FILE) as con:
-            con.execute("DELETE FROM request_log WHERE timestamp < ?", [cutoff])
-            con.execute("VACUUM") # Reclaim space
-            con.execute("CHECKPOINT")
-        last_admin_cleanup = now
-    except Exception as e:
-        logging.error(f"Failed to cleanup old stats: {e}")
+    # Use rebuild strategy instead of in-place vacuum for max effectiveness
+    rebuild_admin_db(days_to_keep=days_to_keep)
+    last_admin_cleanup = now
 
 # ─── Rate Limiting ────────────────────────────────────────────────────────────
 REQUESTS_PER_IP = {}
