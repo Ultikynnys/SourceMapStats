@@ -38,20 +38,67 @@ async function loadStats() {
         document.getElementById('prevBtn').disabled = data.page <= 1;
         document.getElementById('nextBtn').disabled = data.page >= totalPages;
 
-        if (!data.logs || data.logs.length === 0) {
+        if (!data.ip_breakdown || data.ip_breakdown.length === 0) {
             tbody.innerHTML = '<tr><td colspan="4">No requests found.</td></tr>';
             return;
         }
 
         // Render Rows
-        tbody.innerHTML = data.logs.map(log => `
-            <tr>
-                <td>${log.timestamp}</td>
-                <td>${log.ip}</td>
-                <td><span class="endpoint-item">${log.endpoint}</span></td>
-                <td style="word-break: break-all; font-family: monospace; font-size: 0.9em;">${log.full_path}</td>
-            </tr>
-        `).join('');
+        tbody.innerHTML = data.ip_breakdown.map((ip, index) => {
+            const endpoints = Object.entries(ip.endpoints)
+                .map(([ep, count]) => `<span class="endpoint-item">${ep}: ${count}</span>`)
+                .join('');
+
+            const recentRows = (ip.recent_requests || []).map(req => `
+                <tr class="detail-row">
+                    <td>${req.timestamp}</td>
+                    <td colspan="2" style="word-break: break-all; font-family: monospace;">${req.full_path}</td>
+                </tr>
+            `).join('');
+
+            return `
+    <tr class="summary-row" data-index="${index}">
+      <td><span class="toggle-icon">▶</span> ${ip.ip}</td>
+      <td>${ip.total_requests}</td>
+      <td class="endpoint-list">${endpoints}</td>
+    </tr>
+    <tr id="details-${index}" class="details-container" style="display: none;">
+        <td colspan="3" style="padding: 0;">
+            <div style="padding: 1rem; background: #252525;">
+                <h4 style="color: #f39c12; margin-bottom: 0.5rem;">Recent Requests</h4>
+                <table style="width: 100%; background: #1e1e1e;">
+                    <thead>
+                        <tr>
+                            <th style="width: 100px;">Time</th>
+                            <th>Full Path</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${recentRows || '<tr><td colspan="2">No details recorded.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </td>
+    </tr>
+  `;
+        }).join('');
+
+        // Attach event listeners
+        document.querySelectorAll('.summary-row').forEach(row => {
+            row.addEventListener('click', function () {
+                const index = this.getAttribute('data-index');
+                const detailsRow = document.getElementById(`details-${index}`);
+                const icon = this.querySelector('.toggle-icon');
+
+                if (detailsRow.style.display === 'none') {
+                    detailsRow.style.display = 'table-row';
+                    icon.textContent = '▼';
+                } else {
+                    detailsRow.style.display = 'none';
+                    icon.textContent = '▶';
+                }
+            });
+        });
 
     } catch (err) {
         console.error('Error loading stats:', err);

@@ -149,7 +149,7 @@ def track_request(ip: str, endpoint: str):
         logging.error(f"Failed to track request: {e}")
 
 def get_request_stats(page=1, limit=50, date_filter=None):
-    """Get request statistics for the admin panel with pagination and date filter."""
+    """Get request statistics for the admin panel with pagination (by IP) and date filter."""
     try:
         page = max(1, int(page))
         limit = max(10, min(100, int(limit)))
@@ -159,48 +159,95 @@ def get_request_stats(page=1, limit=50, date_filter=None):
         target_date = date_filter if date_filter else today
         
         with duckdb.connect(ADMIN_DB_FILE, read_only=True) as con:
-            # 1. Total Count for the specific date
-            total = con.execute(
-                "SELECT count(*) FROM request_log WHERE strftime('%Y-%m-%d', timestamp) = ?",
+            # 1. Total Unique IPs (for pagination)
+            total_ips = con.execute(
+                "SELECT count(DISTINCT ip) FROM request_log WHERE strftime('%Y-%m-%d', timestamp) = ?",
                 [target_date]
             ).fetchone()[0]
             
-            # 2. Paginated Data for the specific date
-            rows = con.execute(
+            # 2. Paginated IPs (sorted by specific request count desc)
+            ip_rows = con.execute(
                 """
-                SELECT ip, endpoint, full_path, timestamp 
+                SELECT ip, count(*) as req_count 
                 FROM request_log 
                 WHERE strftime('%Y-%m-%d', timestamp) = ?
-                ORDER BY timestamp DESC 
+                GROUP BY ip
+                ORDER BY req_count DESC
                 LIMIT ? OFFSET ?
                 """,
                 [target_date, limit, offset]
             ).fetchall()
             
-            # 3. Unique IPs for the specific date
-            unique_ips = con.execute(
-                "SELECT count(DISTINCT ip) FROM request_log WHERE strftime('%Y-%m-%d', timestamp) = ?",
-                [target_date]
-            ).fetchone()[0]
+            # 3. For each IP, fetch detailed stats (endpoints and recent logs)
+            ip_breakdown = []
+            
+            for row in ip_rows:
+                ip = row[0]
+                total_requests = row[1]
+                
+                # Fetch recent logs for this IP (limit 20 for preview)
+                logs_rows = con.execute(
+                    """
+                    SELECT endpoint, full_path, timestamp 
+                    FROM request_log 
+                    WHERE ip = ? AND strftime('%Y-%m-%d', timestamp) = ?
+                    ORDER BY timestamp DESC
+                    LIMIT 20
+                    """,
+                    [ip, target_date]
+                ).fetchall()
+                
+                # Calculate endpoint distribution
+                endpoint_counts = {}
+                # We can do a quick sub-query or aggregate in python. 
+                # Since we limited logs to 20, the distribution might be inaccurate if we only used those.
+                # Let's do a proper aggregate query for this IP
+                ep_rows = con.execute(
+                    """
+                    SELECT endpoint, count(*) 
+                    FROM request_log 
+                    WHERE ip = ? AND strftime('%Y-%m-%d', timestamp) = ?
+                    GROUP BY endpoint
+                    """,
+                    [ip, target_date]
+                ).fetchall()
+                for ep_r in ep_rows:
+                    endpoint_counts[ep_r[0]] = ep_r[1]
 
-            log_entries = []
-            for r in rows:
-                log_entries.append({
-                    'ip': r[0],
-                    'endpoint': r[1],
-                    'full_path': r[2],
-                    'timestamp': r[3].strftime('%H:%M:%S') # Show time only since date is known
+                recent_requests = []
+                for lr in logs_rows:
+                    recent_requests.append({
+                        'endpoint': lr[0],
+                        'full_path': lr[1],
+                        'timestamp': lr[2].strftime('%H:%M:%S')
+                    })
+                
+                ip_breakdown.append({
+                    'ip': ip,
+                    'total_requests': total_requests,
+                    'endpoints': endpoint_counts,
+                    'recent_requests': recent_requests
                 })
+            
+            # Total stats for header
+            total_requests_today = con.execute(
+                 "SELECT count(*) FROM request_log WHERE strftime('%Y-%m-%d', timestamp) = ?",
+                 [target_date]
+            ).fetchone()[0]
             
             return {
                 'date': target_date,
-                'total_requests': total,
-                'unique_ips_today': unique_ips,
+                'total_requests': total_requests_today,
+                'unique_ips_today': total_ips,
                 'page': page,
                 'limit': limit,
-                'total_pages': math.ceil(total / limit) if total > 0 else 1,
-                'logs': log_entries
+                'total_pages': math.ceil(total_ips / limit) if total_ips > 0 else 1,
+                'ip_breakdown': ip_breakdown # Use the old key name to match potentially existing frontend code structure logic
             }
+
+    except Exception as e:
+        logging.error(f"Failed to get request stats: {e}")
+        return {'total_requests': 0, 'ip_breakdown': []}
 
     except Exception as e:
         logging.error(f"Failed to get request stats: {e}")
