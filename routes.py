@@ -100,7 +100,16 @@ def admin_panel():
 @rate_limiter
 def admin_stats():
     """Get request statistics for the admin panel."""
-    stats = get_request_stats()
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 50))
+        date_filter = request.args.get('date') # Defaults to None, which utils handles as 'today'
+    except ValueError:
+        page = 1
+        limit = 50
+        date_filter = None
+        
+    stats = get_request_stats(page=page, limit=limit, date_filter=date_filter)
     return jsonify(stats)
 
 @bp.route("/api/admin/check")

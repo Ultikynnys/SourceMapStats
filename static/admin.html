@@ -160,18 +160,41 @@
             </div>
         </div>
 
-        <h2>Requests by IP</h2>
+        <h2>Request Log</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div>
+                <label style="margin-right: 1rem;">Date:
+                    <input type="date" id="dateSelect"
+                        style="padding: 0.3rem; background: #333; color: white; border: 1px solid #555; border-radius: 4px;">
+                </label>
+                <label>Rows per page:
+                    <select id="limitSelect">
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                    </select>
+                </label>
+            </div>
+            <div>
+                <button id="prevBtn" disabled>Previous</button>
+                <span id="pageIndicator" style="margin: 0 1rem;">Page 1</span>
+                <button id="nextBtn" disabled>Next</button>
+            </div>
+        </div>
+
         <table>
             <thead>
                 <tr>
-                    <th>IP Address</th>
-                    <th>Total Requests</th>
-                    <th>Endpoints</th>
+                    <th>Timestamp</th>
+                    <th>IP</th>
+                    <th>Endpoint</th>
+                    <th>Full Path</th>
                 </tr>
             </thead>
-            <tbody id="ipTable">
+            <tbody id="logTable">
                 <tr>
-                    <td colspan="3">Loading...</td>
+                    <td colspan="4">Loading...</td>
                 </tr>
             </tbody>
         </table>
