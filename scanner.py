@@ -198,12 +198,12 @@ def scan_loop():
         timings['scan_servers'] = time.time() - t_start
         
         t_start = time.time()
-        write_samples(results)
-        timings['write_samples'] = time.time() - t_start
+        record_snapshot(snapshot_id, snapshot_dt_str) # Create snapshot first so FKs work
+        timings['record_snapshot'] = time.time() - t_start
 
         t_start = time.time()
-        record_snapshot(snapshot_id, snapshot_dt_str) # Mark this snapshot as completed (even if empty)
-        timings['record_snapshot'] = time.time() - t_start
+        write_samples(results)
+        timings['write_samples'] = time.time() - t_start
 
         t_start = time.time()
         save_server_names_to_db(results)
