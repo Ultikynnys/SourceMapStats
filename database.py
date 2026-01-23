@@ -214,6 +214,11 @@ def rebuild_database():
             
             con_new.execute("DETACH old_db")
             
+            # Reset sequences to match max id
+            con_new.execute("SELECT setval('seq_servers', (SELECT max(id) FROM servers))")
+            con_new.execute("SELECT setval('seq_maps', (SELECT max(id) FROM maps))")
+            con_new.execute("SELECT setval('seq_snapshots', (SELECT max(id) FROM snaps))")
+            
         # Swap files
         # We need to ensure no other connections are open. The scanner is single threaded mostly,
         # but the chart worker might be reading replica (good thing it reads replica).

@@ -253,12 +253,26 @@ def get_request_stats(page=1, limit=50, date_filter=None):
         logging.error(f"Failed to get request stats: {e}")
         return {'total_requests': 0, 'logs': []}
 
+last_admin_cleanup = 0
+ADMIN_CLEANUP_INTERVAL = 3600 # 1 hour
+
 def cleanup_old_stats(days_to_keep=30):
-    """Remove stats older than N days."""
+    """Remove stats older than N days and vacuum the DB."""
+    global last_admin_cleanup
+    now = time.time()
+    
+    # Only run once per hour
+    if now - last_admin_cleanup < ADMIN_CLEANUP_INTERVAL:
+        return
+
     try:
+        logging.info("Running admin stats maintenance (cleanup & vacuum)...")
         cutoff = datetime.now() - timedelta(days=days_to_keep)
         with duckdb.connect(ADMIN_DB_FILE) as con:
             con.execute("DELETE FROM request_log WHERE timestamp < ?", [cutoff])
+            con.execute("VACUUM") # Reclaim space
+            con.execute("CHECKPOINT")
+        last_admin_cleanup = now
     except Exception as e:
         logging.error(f"Failed to cleanup old stats: {e}")
 
