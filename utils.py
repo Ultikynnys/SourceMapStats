@@ -2,6 +2,7 @@ import os
 import time
 import math
 import logging
+import duckdb
 from functools import wraps
 from flask import request, jsonify, g, abort
 from dotenv import load_dotenv
@@ -105,83 +106,114 @@ def is_valid_public_ip(ip_str):
         return False
 
 # ─── Request Tracking (for Admin Panel) ───────────────────────────────────────
-from datetime import datetime
-from collections import defaultdict, deque
+from datetime import datetime, timedelta
 
-# Structure: { 'YYYY-MM-DD': { ip: { 'endpoints': {endpoint: count}, 'requests': deque(maxlen=10) } } }
-# But defaultdict is tricky with nested complex types. Let's use a standard dict insertion if missing.
-# Revised structure: daily_request_stats[date][ip] = { 'endpoints': defaultdict(int), 'requests': deque(maxlen=10) }
+ADMIN_DB_FILE = os.path.join(BASE_DIR, "admin_stats.duckdb")
 
-daily_request_stats = defaultdict(lambda: defaultdict(lambda: {
-    'endpoints': defaultdict(int),
-    'requests': deque(maxlen=10)
-}))
-daily_stats_lock = None  # Will be initialized when threading is available
+def init_admin_db():
+    try:
+        with duckdb.connect(ADMIN_DB_FILE) as con:
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS request_log (
+                    id INTEGER PRIMARY KEY,
+                    timestamp TIMESTAMP,
+                    ip TEXT,
+                    endpoint TEXT,
+                    full_path TEXT
+                );
+                CREATE SEQUENCE IF NOT EXISTS seq_req_id START 1;
+            """)
+    except Exception as e:
+        logging.error(f"Failed to init admin DB: {e}")
+
+# Initialize on import
+init_admin_db()
 
 def track_request(ip: str, endpoint: str):
     """Track a request for admin statistics."""
-    today = datetime.now().strftime('%Y-%m-%d')
-    entry = daily_request_stats[today][ip]
-    
-    entry['endpoints'][endpoint] += 1
-    
-    # Track detailed request info
     try:
-        full_path = request.full_path if request.full_path else request.path
-        # strip trailing ? if empty query params
-        if full_path.endswith('?'):
-            full_path = full_path[:-1]
-    except:
-        full_path = endpoint
+        try:
+            full_path = request.full_path if request.full_path else request.path
+            if full_path.endswith('?'):
+                full_path = full_path[:-1]
+        except:
+            full_path = endpoint
 
-    entry['requests'].appendleft({
-        'timestamp': datetime.now().strftime('%H:%M:%S'),
-        'endpoint': endpoint,
-        'full_path': full_path
-    })
+        now = datetime.now()
+        with duckdb.connect(ADMIN_DB_FILE) as con:
+            con.execute(
+                "INSERT INTO request_log (id, timestamp, ip, endpoint, full_path) VALUES (nextval('seq_req_id'), ?, ?, ?, ?)",
+                [now, ip, endpoint, full_path]
+            )
+    except Exception as e:
+        logging.error(f"Failed to track request: {e}")
 
-def get_request_stats():
-    """Get request statistics for the admin panel."""
-    today = datetime.now().strftime('%Y-%m-%d')
-    today_data = daily_request_stats.get(today, {})
-    
-    # Calculate totals
-    total_requests = 0
-    unique_ips = set()
-    ip_breakdown = []
-    
-    for ip, data in today_data.items():
-        unique_ips.add(ip)
-        ip_total = sum(data['endpoints'].values())
-        total_requests += ip_total
+def get_request_stats(page=1, limit=50, date_filter=None):
+    """Get request statistics for the admin panel with pagination and date filter."""
+    try:
+        page = max(1, int(page))
+        limit = max(10, min(100, int(limit)))
+        offset = (page - 1) * limit
         
-        # Convert deque to list for JSON serialization
-        recent_requests = list(data['requests'])
+        today = datetime.now().strftime('%Y-%m-%d')
+        target_date = date_filter if date_filter else today
         
-        ip_breakdown.append({
-            'ip': ip,
-            'total_requests': ip_total,
-            'endpoints': dict(data['endpoints']),
-            'recent_requests': recent_requests
-        })
-    
-    # Sort by total requests descending
-    ip_breakdown.sort(key=lambda x: x['total_requests'], reverse=True)
-    
-    return {
-        'date': today,
-        'total_requests': total_requests,
-        'unique_ips': len(unique_ips),
-        'ip_breakdown': ip_breakdown
-    }
+        with duckdb.connect(ADMIN_DB_FILE, read_only=True) as con:
+            # 1. Total Count for the specific date
+            total = con.execute(
+                "SELECT count(*) FROM request_log WHERE strftime('%Y-%m-%d', timestamp) = ?",
+                [target_date]
+            ).fetchone()[0]
+            
+            # 2. Paginated Data for the specific date
+            rows = con.execute(
+                """
+                SELECT ip, endpoint, full_path, timestamp 
+                FROM request_log 
+                WHERE strftime('%Y-%m-%d', timestamp) = ?
+                ORDER BY timestamp DESC 
+                LIMIT ? OFFSET ?
+                """,
+                [target_date, limit, offset]
+            ).fetchall()
+            
+            # 3. Unique IPs for the specific date
+            unique_ips = con.execute(
+                "SELECT count(DISTINCT ip) FROM request_log WHERE strftime('%Y-%m-%d', timestamp) = ?",
+                [target_date]
+            ).fetchone()[0]
 
-def cleanup_old_stats(days_to_keep=7):
+            log_entries = []
+            for r in rows:
+                log_entries.append({
+                    'ip': r[0],
+                    'endpoint': r[1],
+                    'full_path': r[2],
+                    'timestamp': r[3].strftime('%H:%M:%S') # Show time only since date is known
+                })
+            
+            return {
+                'date': target_date,
+                'total_requests': total,
+                'unique_ips_today': unique_ips,
+                'page': page,
+                'limit': limit,
+                'total_pages': math.ceil(total / limit) if total > 0 else 1,
+                'logs': log_entries
+            }
+
+    except Exception as e:
+        logging.error(f"Failed to get request stats: {e}")
+        return {'total_requests': 0, 'logs': []}
+
+def cleanup_old_stats(days_to_keep=30):
     """Remove stats older than N days."""
-    from datetime import timedelta
-    cutoff = (datetime.now() - timedelta(days=days_to_keep)).strftime('%Y-%m-%d')
-    keys_to_remove = [k for k in daily_request_stats if k < cutoff]
-    for k in keys_to_remove:
-        del daily_request_stats[k]
+    try:
+        cutoff = datetime.now() - timedelta(days=days_to_keep)
+        with duckdb.connect(ADMIN_DB_FILE) as con:
+            con.execute("DELETE FROM request_log WHERE timestamp < ?", [cutoff])
+    except Exception as e:
+        logging.error(f"Failed to cleanup old stats: {e}")
 
 # ─── Rate Limiting ────────────────────────────────────────────────────────────
 REQUESTS_PER_IP = {}
