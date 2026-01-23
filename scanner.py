@@ -29,6 +29,7 @@ MAX_SINGLE_IP_TIMEOUT = 5.0
 BASE_SKIP_DURATION = 60
 MAX_SKIP_DURATION = 600
 SERVER_TIMEOUT = 2.0 # Default start timeout
+SCAN_INTERVAL = 300 # 5 minutes
 
 # Load cooldowns on module load (or when starting the scanner)
 server_cooldowns = load_cooldowns_from_db()
@@ -146,6 +147,9 @@ def scan_loop():
     refresh_served_cache()
     
     while True:
+        cycle_start_time = time.time()
+        timings = {}
+
         now_dt = datetime.now()
         snapshot_id = now_dt.strftime('%Y%m%d%H%M%S')
         # Use the same timestamp for all records in this snapshot
@@ -153,7 +157,10 @@ def scan_loop():
         
         logging.info(f"Starting new scan cycle with snapshot_id: {snapshot_id}")
         
+        t_start = time.time()
         server_list = get_server_list()
+        timings['get_server_list'] = time.time() - t_start
+
         if not server_list:
             logging.warning("Server list is empty. Skipping this scan cycle.")
             time.sleep(60)
@@ -161,6 +168,7 @@ def scan_loop():
 
         # Also scan IPs seen in the DB recently
         # Also scan IPs seen in the DB recently
+        t_start = time.time()
         recent_ips = get_recent_ips(days=7)
         if recent_ips:
             added_count = 0
@@ -176,17 +184,49 @@ def scan_loop():
             
             if added_count > 0:
                 logging.info(f"Added {added_count} recent servers from DB to the scan list.")
+        timings['add_recent_ips'] = time.time() - t_start
 
+        t_start = time.time()
         results = IpReaderMulti(server_list, snapshot_id, snapshot_dt_str)
+        timings['scan_servers'] = time.time() - t_start
+        
+        t_start = time.time()
         write_samples(results)
+        timings['write_samples'] = time.time() - t_start
+
+        t_start = time.time()
         record_snapshot(snapshot_id, snapshot_dt_str) # Mark this snapshot as completed (even if empty)
+        timings['record_snapshot'] = time.time() - t_start
+
+        t_start = time.time()
         save_server_names_to_db(results)
+        timings['save_names'] = time.time() - t_start
         
+        t_start = time.time()
         save_cooldowns_to_db(server_cooldowns)
+        timings['save_cooldowns'] = time.time() - t_start
         
+        t_start = time.time()
         update_replica_db()
+        timings['update_replica'] = time.time() - t_start
         
+        t_start = time.time()
         refresh_served_cache()
+        timings['refresh_cache'] = time.time() - t_start
         
-        logging.info(f"Scan cycle complete. Wrote {len(results)} rows. Waiting for next cycle.")
-        time.sleep(300)
+        logging.info(f"Scan cycle complete. Wrote {len(results)} rows.")
+        
+        elapsed = time.time() - cycle_start_time
+        sleep_time = max(0, SCAN_INTERVAL - elapsed)
+        
+        timings['total_duration'] = elapsed
+        timings['waiting_time'] = sleep_time
+        
+        # Log performance profile
+        profile_msg = ["Performance Profile:"]
+        for step, duration in timings.items():
+            profile_msg.append(f"  {step}: {duration:.4f}s")
+        logging.info("\n".join(profile_msg))
+
+        logging.info(f"Scan took {elapsed:.2f}s. Sleeping for {sleep_time:.2f}s.")
+        time.sleep(sleep_time)
