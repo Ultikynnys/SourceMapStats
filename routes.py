@@ -28,6 +28,8 @@ def get_data():
     # Parse and sanitize parameters
     params = parse_chart_params(request.args)
     
+    logging.info(f"Chart request from {request.remote_addr}: {params}")
+    
     chart_data = get_chart_data(
         start_date_str=params['start_date_str'],
         days_to_show=params['days_to_show'],

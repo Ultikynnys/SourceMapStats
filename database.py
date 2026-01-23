@@ -539,8 +539,9 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     )
 
     cached_result = g_chart_data_cache.get(cache_key)
+    cached_result = g_chart_data_cache.get(cache_key)
     if cached_result and (time.time() - cached_result['timestamp']) < CACHE_EXPIRY_SECONDS:
-        logging.info("Returning cached chart data.")
+        logging.debug("Returning cached chart data.")
         return cached_result['data']
 
     future = query_executor.submit(
@@ -560,11 +561,11 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     return future.result()
 
 def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent, top_servers, append_maps_containing, server_filter, cache_key):
-    logging.info("Generating new chart data (Worker)...")
+    logging.debug("Generating new chart data (Worker)...")
     _start_time = time.time()
 
     try:
-        logging.info("[Chart] Connecting to database (Replica)...")
+        logging.debug("[Chart] Connecting to database (Replica)...")
         with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con:
             row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
             max_date_in_data = row[0] if row else None
@@ -586,7 +587,10 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
             end_date = pd.Timestamp(start_date) + pd.Timedelta(days=int(days_to_show))
             date_range = pd.date_range(start=pd.Timestamp(start_date).date(), end=(pd.Timestamp(end_date).date() - pd.Timedelta(days=1)))
 
-            logging.info(f"[Chart] Querying samples_v2 from {start_date.date()} to {end_date.date()}...")
+            end_date = pd.Timestamp(start_date) + pd.Timedelta(days=int(days_to_show))
+            date_range = pd.date_range(start=pd.Timestamp(start_date).date(), end=(pd.Timestamp(end_date).date() - pd.Timedelta(days=1)))
+
+            logging.debug(f"[Chart] Querying samples_v2 from {start_date.date()} to {end_date.date()}...")
             df_window = con.execute(
                 """
                 SELECT s.ip, s.port, m.name as map, sa.players, sn.timestamp, s.country_code, sn.guid as snapshot_id
@@ -597,8 +601,9 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
                 WHERE sn.timestamp >= ? AND sn.timestamp < ?
                 """,
                 [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
+                [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
             ).df()
-            logging.info(f"[Chart] Query complete, fetched {len(df_window)} rows in {time.time() - _start_time:.2f}s")
+            logging.debug(f"[Chart] Query complete, fetched {len(df_window)} rows in {time.time() - _start_time:.2f}s")
             
             # Helper to fetch server names
             server_names_map = {}
@@ -617,22 +622,22 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
         logging.warning("No data available for the selected parameters.")
         return {'labels': [], 'datasets': [], 'dailyTotals': [], 'snapshotCounts': [], 'ranking': [], 'shownMapsCount': 0, 'averageDailyPlayerCount': 0}
 
-    logging.info(f"[Chart] Cleaning and normalizing data...")
+    logging.debug(f"[Chart] Cleaning and normalizing data...")
     df = df_window.copy()
     
     # DEBUG LOGGING
-    logging.info(f"DEBUG: df dtypes: {df.dtypes}")
+    logging.debug(f"DEBUG: df dtypes: {df.dtypes}")
     if not df.empty:
-        logging.info(f"DEBUG: First row timestamp: {df.iloc[0]['timestamp']} (type: {type(df.iloc[0]['timestamp'])})")
+        logging.debug(f"DEBUG: First row timestamp: {df.iloc[0]['timestamp']} (type: {type(df.iloc[0]['timestamp'])})")
     
     df['players'] = pd.to_numeric(df['players'], errors='coerce').fillna(0).astype(int)
     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
     
     # DEBUG LOGGING POST-CONVERSION
     if not df.empty:
-         logging.info(f"DEBUG: Post-conversion timestamp: {df.iloc[0]['timestamp']}")
+         logging.debug(f"DEBUG: Post-conversion timestamp: {df.iloc[0]['timestamp']}")
          null_ts = df['timestamp'].isna().sum()
-         logging.info(f"DEBUG: Timestamps becoming NaT: {null_ts} / {len(df)}")
+         logging.debug(f"DEBUG: Timestamps becoming NaT: {null_ts} / {len(df)}")
          
     df.dropna(subset=['timestamp'], inplace=True)
 
@@ -659,7 +664,7 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
         logging.warning("No data available for the selected parameters.")
         return {'labels': [], 'datasets': [], 'dailyTotals': [], 'snapshotCounts': [], 'ranking': [], 'shownMapsCount': 0, 'averageDailyPlayerCount': 0}
 
-    logging.info(f"[Chart] Aggregating data ({len(df)} rows after filtering)...")
+    logging.debug(f"[Chart] Aggregating data ({len(df)} rows after filtering)...")
     # bucket to 2 hours
     df['date'] = df['timestamp'].dt.floor('2h')
     
@@ -701,7 +706,7 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
     daily_total_avg_players = merged_df.groupby('date')['avg_players'].transform('sum')
     merged_df['player_percentage'] = (merged_df['avg_players'] / daily_total_avg_players.replace(0, 1) * 100).fillna(0)
 
-    logging.info(f"[Chart] Preparing chart datasets...")
+    logging.debug(f"[Chart] Preparing chart datasets...")
     
     # Construct a comprehensive time index for filling gaps
     full_time_index = pd.date_range(start=pd.Timestamp(start_date).floor('2h'), end=pd.Timestamp(end_date).ceil('2h'), freq='2h')
@@ -765,7 +770,7 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
     daily_totals_indexed = daily_total_snapshots.set_index('date')['total_snapshots']
     snapshot_counts = daily_totals_indexed.reindex(full_time_index, fill_value=0).tolist()
 
-    logging.info(f"[Chart] Calculating per-server contributions...")
+    logging.debug(f"[Chart] Calculating per-server contributions...")
     try:
         srv_sum = df.groupby(['date', 'ip', 'port'])['players'].sum().reset_index()
         srv = srv_sum.merge(
