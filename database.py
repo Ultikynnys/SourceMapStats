@@ -48,22 +48,53 @@ DEFAULT_CHART_PARAMS = {
 def init_db():
     try:
         with duckdb.connect(DB_FILE) as con:
-            con.execute(
-                """
-                CREATE TABLE IF NOT EXISTS samples (
+            # 1. Create Normalized Tables
+            con.execute("""
+                CREATE SEQUENCE IF NOT EXISTS seq_servers START 1;
+                CREATE SEQUENCE IF NOT EXISTS seq_maps START 1;
+                CREATE SEQUENCE IF NOT EXISTS seq_snapshots START 1;
+            """)
+            
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS servers (
+                    id INTEGER PRIMARY KEY DEFAULT nextval('seq_servers'),
                     ip TEXT,
                     port INTEGER,
-                    map TEXT,
-                    players INTEGER,
-                    timestamp TIMESTAMP,
                     country_code TEXT,
-                    snapshot_id TEXT
+                    UNIQUE(ip, port)
                 )
-                """
-            )
+            """)
             
-            con.execute(
-                """
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS maps (
+                    id INTEGER PRIMARY KEY DEFAULT nextval('seq_maps'),
+                    name TEXT UNIQUE
+                )
+            """)
+            
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS snaps (
+                    id INTEGER PRIMARY KEY DEFAULT nextval('seq_snapshots'),
+                    guid TEXT UNIQUE,
+                    timestamp TIMESTAMP
+                )
+            """)
+            
+            # Optimized samples table
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS samples_v2 (
+                    snapshot_id INTEGER,
+                    server_id INTEGER,
+                    map_id INTEGER,
+                    players INTEGER,
+                    FOREIGN KEY (snapshot_id) REFERENCES snaps(id),
+                    FOREIGN KEY (server_id) REFERENCES servers(id),
+                    FOREIGN KEY (map_id) REFERENCES maps(id)
+                )
+            """)
+
+            # Cooldowns and Names tables remain mostly same
+            con.execute("""
                 CREATE TABLE IF NOT EXISTS server_cooldowns (
                     ip TEXT,
                     port INTEGER,
@@ -73,20 +104,9 @@ def init_db():
                     updated_at TIMESTAMP,
                     PRIMARY KEY (ip, port)
                 )
-                """
-            )
+            """)
             
-            con.execute(
-                """
-                CREATE TABLE IF NOT EXISTS snapshots (
-                    snapshot_id TEXT PRIMARY KEY,
-                    timestamp TIMESTAMP
-                )
-                """
-            )
-            
-            con.execute(
-                """
+            con.execute("""
                 CREATE TABLE IF NOT EXISTS server_names (
                     ip TEXT,
                     port INTEGER,
@@ -94,62 +114,59 @@ def init_db():
                     updated_at TIMESTAMP,
                     PRIMARY KEY (ip, port)
                 )
-                """
-            )
-
-            # Migration
-            try:
-                row = con.execute("SELECT count(*) FROM samples").fetchone()
-                has_rows = (row is not None and row[0] and row[0] > 0)
-            except Exception:
-                has_rows = False
-
-            if (not has_rows) and os.path.exists(RAW_FILE) and os.path.getsize(RAW_FILE) > 0:
-                logging.info("Migrating existing CSV data into DuckDB...")
-                try:
-                    con.execute(
-                        """
-                        INSERT INTO samples (ip, port, map, players, timestamp, country_code, snapshot_id)
-                        SELECT 
-                            ip,
-                            try_cast(port AS INTEGER) as port,
-                            map,
-                            try_cast(players AS INTEGER) as players,
-                            strptime(timestamp_str, '%Y-%m-%d-%H:%M:%S') as timestamp,
-                            country_code,
-                            snapshot_id
-                        FROM read_csv(
-                            ?,
-                            columns={'ip':'VARCHAR','port':'VARCHAR','map':'VARCHAR','players':'VARCHAR','timestamp_str':'VARCHAR','country_code':'VARCHAR','snapshot_id':'VARCHAR'},
-                            delim=',',
-                            header=false,
-                            quote='"',
-                            escape='"',
-                            sample_size=-1,
-                            nullstr=['N/A']
-                        )
-                        """,
-                        [RAW_FILE]
-                    )
-                    # Backfill snapshots table from samples if empty
-                    con.execute("""
-                        INSERT OR IGNORE INTO snapshots (snapshot_id, timestamp)
-                        SELECT DISTINCT snapshot_id, min(timestamp) 
-                        FROM samples 
-                        GROUP BY snapshot_id
-                    """)
-                    logging.info("CSV migration complete.")
-                except Exception as mig_e:
-                    logging.error(f"CSV migration to DuckDB failed: {mig_e}")
-            # Ensure snapshots table is populated (migration for existing DBs)
-            con.execute("""
-                INSERT OR IGNORE INTO snapshots (snapshot_id, timestamp)
-                SELECT DISTINCT snapshot_id, min(timestamp) 
-                FROM samples 
-                WHERE snapshot_id IS NOT NULL
-                GROUP BY snapshot_id
             """)
+            
+            con.execute("CREATE INDEX IF NOT EXISTS idx_snaps_timestamp ON snaps(timestamp)")
+            # No timestamp index on samples needed anymore, filtering by snapshot_id (which is filtered by snaps.timestamp)
 
+            # Migration Check: 'samples' (old) exists but 'samples_v2' is empty?
+            try:
+                row_old = con.execute("SELECT count(*) FROM samples").fetchone()
+                count_old = row_old[0] if row_old else 0
+                row_new = con.execute("SELECT count(*) FROM samples_v2").fetchone()
+                count_new = row_new[0] if row_new else 0
+            except:
+                count_old = 0
+                count_new = 0
+            
+            if count_old > 0 and count_new == 0:
+                logging.info(f"detected legacy data ({count_old} rows). Starting migration to normalized schema...")
+                try:
+                    # 1. Populate Dimension Tables
+                    logging.info("Migrating servers...")
+                    con.execute("INSERT OR IGNORE INTO servers (ip, port, country_code) SELECT DISTINCT ip, port, country_code FROM samples")
+                    
+                    logging.info("Migrating maps...")
+                    con.execute("INSERT OR IGNORE INTO maps (name) SELECT DISTINCT map FROM samples")
+                    
+                    logging.info("Migrating snapshots...")
+                    # Sync from old snapshots table if possible, else from samples
+                    con.execute("INSERT OR IGNORE INTO snaps (guid, timestamp) SELECT snapshot_id, timestamp FROM snapshots")
+                    # Fallback for missing snapshots
+                    con.execute("INSERT OR IGNORE INTO snaps (guid, timestamp) SELECT DISTINCT snapshot_id, timestamp FROM samples WHERE snapshot_id NOT IN (SELECT guid FROM snaps)")
+                    
+                    # 2. Populate Fact Table
+                    logging.info("Migrating samples (this may take a moment)...")
+                    con.execute("""
+                        INSERT INTO samples_v2 (snapshot_id, server_id, map_id, players)
+                        SELECT 
+                            sn.id, s.id, m.id, old.players
+                        FROM samples old
+                        JOIN snaps sn ON old.snapshot_id = sn.guid
+                        JOIN servers s ON old.ip = s.ip AND old.port = s.port
+                        JOIN maps m ON old.map = m.name
+                    """)
+                    
+                    logging.info("Migration complete. Optimizing storage...")
+                    # Drop old tables
+                    con.execute("DROP TABLE samples")
+                    con.execute("DROP TABLE snapshots")
+                    con.execute("CHECKPOINT")
+                    con.execute("VACUUM")
+                    logging.info("Database optimized.")
+                except Exception as e:
+                    logging.error(f"Migration failed: {e}")
+            
     except Exception as e:
         logging.error(f"Failed to initialize DuckDB: {e}")
     
@@ -245,7 +262,7 @@ def record_snapshot(snapshot_id, snapshot_dt_str):
                 ts = datetime.fromisoformat(snapshot_dt_str)
             
             con.execute(
-                "INSERT OR REPLACE INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+                "INSERT OR IGNORE INTO snaps (guid, timestamp) VALUES (?, ?)",
                 [snapshot_id, ts]
             )
     except Exception as e:
@@ -278,10 +295,42 @@ def write_samples(rows):
 
     try:
         with duckdb.connect(DB_FILE) as con:
-            con.executemany(
-                "INSERT INTO samples (ip, port, map, players, timestamp, country_code, snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                prepared_rows
-            )
+            # Upsert maps
+            maps = list(set(r[2] for r in prepared_rows))
+            con.execute("INSERT OR IGNORE INTO maps (name) SELECT * FROM (VALUES " + ",".join(["(?)"] * len(maps)) + ")", maps)
+            
+            # Upsert servers
+            # We want unique ip,port. 
+            # Note: duckdb executemany might be slow if we do complex upserts.
+            # Best is to just insert ignore.
+            servers = {} # (ip, port) -> country
+            for r in prepared_rows:
+                servers[(r[0], r[1])] = r[5]
+            
+            # Prepare server tuples
+            srv_tuples = [(ip, port, code) for (ip, port), code in servers.items()]
+            con.executemany("INSERT OR IGNORE INTO servers (ip, port, country_code) VALUES (?, ?, ?)", srv_tuples)
+             
+            # Now we need IDs to insert into samples_v2
+            # For bulk performance, we can load these into temp tables and join
+            
+            con.execute("CREATE TEMPORARY TABLE IF NOT EXISTS temp_raw_samples (ip TEXT, port INTEGER, map TEXT, players INTEGER, guid TEXT)")
+            con.execute("DELETE FROM temp_raw_samples")
+            
+            raw_tuples = [(r[0], r[1], r[2], r[3], r[6]) for r in prepared_rows]
+            con.executemany("INSERT INTO temp_raw_samples VALUES (?,?,?,?,?)", raw_tuples)
+            
+            con.execute("""
+                INSERT INTO samples_v2 (snapshot_id, server_id, map_id, players)
+                SELECT 
+                    sn.id, s.id, m.id, t.players
+                FROM temp_raw_samples t
+                JOIN snaps sn ON t.guid = sn.guid
+                JOIN servers s ON t.ip = s.ip AND t.port = s.port
+                JOIN maps m ON t.map = m.name
+            """)
+            con.execute("DROP TABLE temp_raw_samples")
+
     except Exception as e:
         logging.error(f"Failed to write to DuckDB: {e}")
 
@@ -299,7 +348,7 @@ def _update_served_cache_from_db():
     
     try:
         with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con:
-            row = con.execute("SELECT max(timestamp) FROM samples").fetchone()
+            row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
             latest = row[0] if row else None
             if latest:
                 if isinstance(latest, str):
@@ -311,7 +360,7 @@ def _update_served_cache_from_db():
                     latest_dt = latest
                 freshness = latest_dt.strftime(ReaderTimeFormat)
             
-            row = con.execute("SELECT min(timestamp), max(timestamp) FROM samples").fetchone()
+            row = con.execute("SELECT min(timestamp), max(timestamp) FROM snaps").fetchone()
             if row and row[0] is not None and row[1] is not None:
                 min_dt, max_dt = row[0], row[1]
                 if isinstance(min_dt, str):
@@ -407,7 +456,7 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
     try:
         logging.info("[Chart] Connecting to database (Replica)...")
         with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con:
-            row = con.execute("SELECT max(timestamp) FROM samples").fetchone()
+            row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
             max_date_in_data = row[0] if row else None
             if not max_date_in_data:
                 return {'labels': [], 'datasets': [], 'dailyTotals': [], 'snapshotCounts': [], 'ranking': [], 'shownMapsCount': 0, 'averageDailyPlayerCount': 0}
@@ -427,12 +476,15 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
             end_date = pd.Timestamp(start_date) + pd.Timedelta(days=int(days_to_show))
             date_range = pd.date_range(start=pd.Timestamp(start_date).date(), end=(pd.Timestamp(end_date).date() - pd.Timedelta(days=1)))
 
-            logging.info(f"[Chart] Querying samples from {start_date.date()} to {end_date.date()}...")
+            logging.info(f"[Chart] Querying samples_v2 from {start_date.date()} to {end_date.date()}...")
             df_window = con.execute(
                 """
-                SELECT ip, port, map, players, timestamp, country_code, snapshot_id
-                FROM samples
-                WHERE timestamp >= ? AND timestamp < ?
+                SELECT s.ip, s.port, m.name as map, sa.players, sn.timestamp, s.country_code, sn.guid as snapshot_id
+                FROM samples_v2 sa
+                JOIN snaps sn ON sa.snapshot_id = sn.id
+                JOIN servers s ON sa.server_id = s.id
+                JOIN maps m ON sa.map_id = m.id
+                WHERE sn.timestamp >= ? AND sn.timestamp < ?
                 """,
                 [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
             ).df()
@@ -504,18 +556,21 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
     # 1. Calculate total snapshots per bucket (Global denominator) using the snapshots table
     try:
         with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con_snap:
-            # We want snapshots that are within our date range
-            snapshots_df = con_snap.execute(
+            # Optimize: Aggregate in DB directly using time_bucket
+            daily_total_snapshots = con_snap.execute(
                 """
-                SELECT timestamp, snapshot_id 
-                FROM snapshots 
+                SELECT 
+                    time_bucket(INTERVAL '2 hours', timestamp) as date,
+                    COUNT(DISTINCT guid) as total_snapshots
+                FROM snaps 
                 WHERE timestamp >= ? AND timestamp < ?
+                GROUP BY 1
+                ORDER BY 1
                 """,
                 [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
             ).df()
-            snapshots_df['date'] = pd.to_datetime(snapshots_df['timestamp']).dt.floor('2h')
-            daily_total_snapshots = snapshots_df.groupby('date')['snapshot_id'].nunique().reset_index()
-            daily_total_snapshots.rename(columns={'snapshot_id': 'total_snapshots'}, inplace=True)
+            # Ensure date is datetime for merging
+            daily_total_snapshots['date'] = pd.to_datetime(daily_total_snapshots['date'])
     except Exception as e:
         logging.error(f"[Chart] Failed to query snapshots table: {e}. Falling back to samples count.")
         daily_total_snapshots = df.groupby('date')['snapshot_id'].nunique().reset_index()
@@ -782,3 +837,21 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
     logging.info(f"[Chart] Generation complete in {time.time() - _start_time:.2f}s (datasets={len(datasets)}, ranking={len(ranking)})")
     g_chart_data_cache[cache_key] = {'timestamp': time.time(), 'data': result}
     return result
+
+# ─── New Helper ───────────────────────────────────────────────────────────────
+def get_recent_ips(days=7):
+    """
+    Fetch distinct (ip, port) pairs that have appeared in the DB 
+    within the last N days.
+    """
+    try:
+        with duckdb.connect(DB_FILE) as con:
+            cutoff = (datetime.now() - pd.Timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+            rows = con.execute(
+                "SELECT DISTINCT ip, port FROM samples WHERE timestamp >= ?",
+                [cutoff]
+            ).fetchall()
+            return [(r[0], int(r[1])) for r in rows]
+    except Exception as e:
+        logging.error(f"Failed to fetch recent IPs from DB: {e}")
+        return []
