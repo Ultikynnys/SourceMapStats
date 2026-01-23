@@ -443,6 +443,9 @@ def write_samples(rows):
 
     except Exception as e:
         logging.error(f"Failed to write to DuckDB: {e}")
+    
+    # Sync replica after writing new samples so frontend sees them immediately
+    update_replica_db()
 
 def get_data_freshness():
     with g_served_lock:
