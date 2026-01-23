@@ -3,8 +3,7 @@ import requests
 import logging
 from dotenv import load_dotenv
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+from config import BASE_DIR
 
 STEAM_API_KEY = os.getenv('STEAM_API_KEY', '')
 GAME_DIR = os.getenv('GAME_DIR', 'tf')  # Default to Team Fortress 2

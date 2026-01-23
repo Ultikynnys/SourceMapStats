@@ -17,7 +17,8 @@ from database import (
     refresh_served_cache,
     record_snapshot,
     DB_FILE,
-    ReaderTimeFormat
+    ReaderTimeFormat,
+    get_recent_ips
 )
 from steam_api import get_server_list
 from utils import is_valid_public_ip, sanitize_server_name
@@ -159,29 +160,22 @@ def scan_loop():
             continue
 
         # Also scan IPs seen in the DB recently
-        try:
-            with duckdb.connect(DB_FILE) as con:
-                cutoff = (datetime.now() - pd.Timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
-                rows = con.execute(
-                    "SELECT DISTINCT ip, port FROM samples WHERE timestamp >= ?",
-                    [cutoff]
-                ).fetchall()
-                
-                added_count = 0
-                existing_set = set(server_list)
-                for r_ip, r_port in rows:
-                    if (r_ip, r_port) not in existing_set:
-                        try:
-                            server_list.append((r_ip, int(r_port)))
-                            existing_set.add((r_ip, int(r_port)))
-                            added_count += 1
-                        except:
-                            pass
-                
-                if added_count > 0:
-                    logging.info(f"Added {added_count} recent servers from DB to the scan list.")
-        except Exception as e:
-            logging.warning(f"Failed to fetch recent IPs from DB: {e}")
+        # Also scan IPs seen in the DB recently
+        recent_ips = get_recent_ips(days=7)
+        if recent_ips:
+            added_count = 0
+            existing_set = set(server_list)
+            for r_ip, r_port in recent_ips:
+                if (r_ip, r_port) not in existing_set:
+                    try:
+                        server_list.append((r_ip, int(r_port)))
+                        existing_set.add((r_ip, int(r_port)))
+                        added_count += 1
+                    except:
+                        pass
+            
+            if added_count > 0:
+                logging.info(f"Added {added_count} recent servers from DB to the scan list.")
 
         results = IpReaderMulti(server_list, snapshot_id, snapshot_dt_str)
         write_samples(results)

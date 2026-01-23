@@ -14,13 +14,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # ─── add local libs (pythonvalve + a2s) ───────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Ensure local libs are importable
-sys.path.insert(0, os.path.join(BASE_DIR, "pythonvalve"))
-sys.path.insert(0, os.path.join(BASE_DIR, "a2s"))
-
-# Load environment variables
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+import config
+from config import BASE_DIR
 
 # Modules
 # Note: database and scanner might use a2s, so we imported it implicitly by fixing sys.path

@@ -7,8 +7,7 @@ from flask import request, jsonify, g, abort
 from dotenv import load_dotenv
 
 # Load environment variables
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+from config import BASE_DIR
 
 # ─── Admin IP Whitelist ───────────────────────────────────────────────────────
 _admin_ips_str = os.getenv('ADMIN_IPS', '')
