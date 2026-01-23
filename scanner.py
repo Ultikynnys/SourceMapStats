@@ -18,7 +18,8 @@ from database import (
     record_snapshot,
     DB_FILE,
     ReaderTimeFormat,
-    get_recent_ips
+    get_recent_ips,
+    maintenance
 )
 from steam_api import get_server_list
 from utils import is_valid_public_ip, sanitize_server_name
@@ -146,9 +147,14 @@ def scan_loop():
     logging.info("Initializing served cache from existing data...")
     refresh_served_cache()
     
+    logging.info("Running initial database maintenance...")
+    maintenance()
+
+    cycles_count = 0
     while True:
         cycle_start_time = time.time()
         timings = {}
+        cycles_count += 1
 
         now_dt = datetime.now()
         snapshot_id = now_dt.strftime('%Y%m%d%H%M%S')
@@ -210,6 +216,12 @@ def scan_loop():
         update_replica_db()
         timings['update_replica'] = time.time() - t_start
         
+        # Periodic maintenance (every hour / 12 cycles)
+        if cycles_count > 0 and cycles_count % 12 == 0:
+            t_maint = time.time()
+            maintenance()
+            timings['maintenance'] = time.time() - t_maint
+
         t_start = time.time()
         refresh_served_cache()
         timings['refresh_cache'] = time.time() - t_start
