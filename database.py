@@ -601,7 +601,6 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
                 WHERE sn.timestamp >= ? AND sn.timestamp < ?
                 """,
                 [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
-                [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
             ).df()
             logging.debug(f"[Chart] Query complete, fetched {len(df_window)} rows in {time.time() - _start_time:.2f}s")
             
