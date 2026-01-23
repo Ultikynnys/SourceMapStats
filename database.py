@@ -23,6 +23,7 @@ query_executor = ThreadPoolExecutor(max_workers=CHART_WORKERS)
 
 # ─── data cache ───────────────────────────────────────────────────────────────
 g_chart_data_cache = {}
+g_known_server_names = {} # (ip, port) -> name
 
 # ─── served data cache (decoupled from DB) ────────────────────────────────────
 g_served_data = {
@@ -173,6 +174,29 @@ def init_db():
     # Always sync replica on startup to ensure schema changes propagate
     if os.path.exists(DB_FILE):
         update_replica_db()
+        load_server_names_from_db()
+
+def maintenance():
+    """Run VACUUM and CHECKPOINT to reclaim disk space."""
+    try:
+        logging.info("Starting database maintenance (VACUUM)...")
+        with duckdb.connect(DB_FILE) as con:
+            con.execute("CHECKPOINT")
+            con.execute("VACUUM")
+        logging.info("Database maintenance complete.")
+        update_replica_db()
+    except Exception as e:
+        logging.error(f"Database maintenance failed: {e}")
+
+def load_server_names_from_db():
+    try:
+        with duckdb.connect(DB_FILE) as con:
+            rows = con.execute("SELECT ip, port, name FROM server_names").fetchall()
+            for r in rows:
+                g_known_server_names[(r[0], r[1])] = r[2]
+        logging.info(f"Loaded {len(g_known_server_names)} server names into cache.")
+    except Exception as e:
+        logging.warning(f"Failed to load server names cache: {e}")
 
 def update_replica_db():
     try:
@@ -243,6 +267,7 @@ def save_server_names_to_db(rows):
     
     server_updates = []
     now = datetime.now()
+    
     for row in rows:
         try:
             if len(row) >= 6:
@@ -250,7 +275,11 @@ def save_server_names_to_db(rows):
                 port = int(row[1])
                 name = row[5]
                 if name:
-                    server_updates.append({'ip': ip, 'port': port, 'name': name, 'updated_at': now})
+                    # Only update if new or changed
+                    key = (ip, port)
+                    if g_known_server_names.get(key) != name:
+                        server_updates.append({'ip': ip, 'port': port, 'name': name, 'updated_at': now})
+                        g_known_server_names[key] = name
         except Exception:
             continue
 
@@ -268,6 +297,7 @@ def save_server_names_to_db(rows):
                 SELECT * FROM df
                 """
             )
+            logging.info(f"Updated names for {len(server_updates)} servers.")
     except Exception as e:
         logging.error(f"Failed to update server names in DuckDB: {e}")
 
