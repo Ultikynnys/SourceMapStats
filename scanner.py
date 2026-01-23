@@ -24,7 +24,7 @@ from steam_api import get_server_list
 from utils import is_valid_public_ip, sanitize_server_name
 
 # ─── Constants ────────────────────────────────────────────────────────────────
-SCAN_THREADS = 100
+SCAN_THREADS = 200
 MAX_SINGLE_IP_TIMEOUT = 5.0
 BASE_SKIP_DURATION = 60
 MAX_SKIP_DURATION = 600
