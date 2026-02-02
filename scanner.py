@@ -152,6 +152,8 @@ def scan_loop():
     rebuild_database()
 
     cycles_count = 0
+    last_rebuild_date = datetime.now().date()  # Track last rebuild date
+    
     while True:
         cycle_start_time = time.time()
         timings = {}
@@ -217,11 +219,14 @@ def scan_loop():
         update_replica_db()
         timings['update_replica'] = time.time() - t_start
         
-        # Periodic maintenance (every hour / 12 cycles)
-        if cycles_count > 0 and cycles_count % 12 == 0:
-            t_maint = time.time()
-            maintenance()
-            timings['maintenance'] = time.time() - t_maint
+        # Daily database rebuild/compaction (runs once per day when date changes)
+        current_date = datetime.now().date()
+        if current_date != last_rebuild_date:
+            logging.info(f"New day detected ({last_rebuild_date} -> {current_date}). Running daily database compaction...")
+            t_rebuild = time.time()
+            rebuild_database()
+            last_rebuild_date = current_date
+            timings['daily_rebuild'] = time.time() - t_rebuild
 
         t_start = time.time()
         refresh_served_cache()

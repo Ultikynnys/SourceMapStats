@@ -20,3 +20,4 @@ ip_timeouts.json
 config_keys.json
 .env
 *.wal
+*.filepart
