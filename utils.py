@@ -189,7 +189,7 @@ def block_ip(ip: str, reason: str = "Manual block", auto: bool = False):
         'blocked_at': datetime.now(),
         'auto': auto
     }
-    logging.warning(f"🚫 Blocked IP: {ip} (reason: {reason}, auto: {auto})")
+    logging.warning(f"Blocked IP: {ip} (reason: {reason}, auto: {auto})")
     
     # Persist to database
     try:
@@ -210,7 +210,7 @@ def unblock_ip(ip: str) -> bool:
     
     del _blocked_ips[ip]
     _threat_counts.pop(ip, None)
-    logging.info(f"✅ Unblocked IP: {ip}")
+    logging.info(f"Unblocked IP: {ip}")
     
     try:
         with duckdb.connect(ADMIN_DB_FILE) as con:
@@ -248,7 +248,7 @@ def record_threat(ip: str, threat_type: str, full_path: str):
     _threat_counts[ip] = _threat_counts.get(ip, 0) + 1
     count = _threat_counts[ip]
     
-    logging.warning(f"⚠️ Threat detected from {ip}: {threat_type} ({count}/{AUTO_BLOCK_THRESHOLD}) - {full_path[:100]}")
+    logging.warning(f"Threat detected from {ip}: {threat_type} ({count}/{AUTO_BLOCK_THRESHOLD}) - {full_path[:100]}")
     
     if count >= AUTO_BLOCK_THRESHOLD and ip not in _blocked_ips:
         block_ip(ip, f"Auto-blocked: {threat_type} (detected {count} threats)", auto=True)
