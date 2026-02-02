@@ -114,11 +114,12 @@ ADMIN_DB_FILE = os.path.join(BASE_DIR, "admin_stats.duckdb")
 # ─── Threat Detection & IP Blocking ───────────────────────────────────────────
 # Patterns that indicate malicious intent
 THREAT_PATTERNS = [
-    # XSS attempts
+    # XSS attempts - use explicit event handler names to avoid false positives on params like "only_maps_containing="
     (regex_module.compile(r'<script', regex_module.IGNORECASE), 'XSS'),
     (regex_module.compile(r'javascript:', regex_module.IGNORECASE), 'XSS'),
-    (regex_module.compile(r'on\w+\s*=', regex_module.IGNORECASE), 'XSS'),  # onclick=, onerror=, etc.
+    (regex_module.compile(r'\b(onclick|onload|onerror|onmouseover|onmouseout|onfocus|onblur|onchange|onsubmit|onkeydown|onkeyup|onkeypress|ondblclick|onmousedown|onmouseup|oncontextmenu|ondrag|ondrop|onpaste)\s*=', regex_module.IGNORECASE), 'XSS'),
     (regex_module.compile(r'<\s*\w+[^>]*\s+on\w+\s*=', regex_module.IGNORECASE), 'XSS'),
+    (regex_module.compile(r'<\s*(img|iframe|object|embed|svg|math|video|audio|source|body|input|form|button|a)\b', regex_module.IGNORECASE), 'XSS'),
     
     # Path traversal
     (regex_module.compile(r'\.\./', regex_module.IGNORECASE), 'PATH_TRAVERSAL'),
