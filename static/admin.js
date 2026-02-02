@@ -23,10 +23,10 @@ async function blockIP(ip, event) {
         });
         const data = await res.json();
         if (data.success) {
-            alert(`✅ ${data.message}`);
+            alert(data.message);
             loadStats(); // Refresh
         } else {
-            alert(`❌ ${data.error || data.message}`);
+            alert(data.error || data.message);
         }
     } catch (err) {
         alert(`Error: ${err.message}`);
@@ -46,10 +46,10 @@ async function unblockIP(ip, event) {
         });
         const data = await res.json();
         if (data.success) {
-            alert(`✅ ${data.message}`);
+            alert(data.message);
             loadStats(); // Refresh
         } else {
-            alert(`❌ ${data.error || data.message}`);
+            alert(data.error || data.message);
         }
     } catch (err) {
         alert(`Error: ${err.message}`);

@@ -82,9 +82,10 @@ let loadingTimerInterval = null;
 function updateLoadingTimer() {
   if (!loadingStartTime) return;
   const elapsed = Math.floor((Date.now() - loadingStartTime) / 1000);
-  const timerEl = document.getElementById('loadingTimer');
-  if (timerEl) {
-    timerEl.textContent = `Loading... ${elapsed}s`;
+  // Use existing overlay-text element
+  const textEl = document.querySelector('#chartOverlay .overlay-text');
+  if (textEl) {
+    textEl.textContent = `Loading... ${elapsed}s`;
   }
 }
 
@@ -93,15 +94,14 @@ function showLoading() {
   const overlay = document.getElementById('chartOverlay');
   if (overlay) {
     overlay.style.display = 'flex';
-    // Add timer element if not present
-    let timerEl = document.getElementById('loadingTimer');
-    if (!timerEl) {
-      timerEl = document.createElement('div');
-      timerEl.id = 'loadingTimer';
-      timerEl.style.cssText = 'color: white; margin-top: 1rem; font-size: 1.2rem;';
-      overlay.appendChild(timerEl);
+
+    // Update existing text element
+    const textEl = overlay.querySelector('.overlay-text');
+    if (textEl) {
+      textEl.textContent = 'Loading... 0s';
     }
-    // Add cancel button if not present
+
+    // Add cancel button if not present (only element we add)
     let cancelBtn = document.getElementById('cancelLoadingBtn');
     if (!cancelBtn) {
       cancelBtn = document.createElement('button');
@@ -112,7 +112,6 @@ function showLoading() {
       overlay.appendChild(cancelBtn);
     }
     cancelBtn.style.display = 'block';
-    timerEl.textContent = 'Loading... 0s';
   }
   loadingStartTime = Date.now();
   loadingTimerInterval = setInterval(updateLoadingTimer, 1000);
