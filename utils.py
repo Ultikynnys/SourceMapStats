@@ -160,12 +160,43 @@ THREAT_PATTERNS = [
     (regex_module.compile(r'wp-includes', regex_module.IGNORECASE), 'CMS_PROBE'),
     (regex_module.compile(r'wp-login', regex_module.IGNORECASE), 'CMS_PROBE'),
     (regex_module.compile(r'xmlrpc\.php', regex_module.IGNORECASE), 'CMS_PROBE'),
+    (regex_module.compile(r'rest_route=', regex_module.IGNORECASE), 'CMS_PROBE'),  # WP REST API probe
+    (regex_module.compile(r'/wp/v2/', regex_module.IGNORECASE), 'CMS_PROBE'),  # WP REST API
+    (regex_module.compile(r'/wp-json/', regex_module.IGNORECASE), 'CMS_PROBE'),  # WP REST API alt
     
     # Config/backup file probes
     (regex_module.compile(r'\.bak', regex_module.IGNORECASE), 'CONFIG_PROBE'),
     (regex_module.compile(r'\.backup', regex_module.IGNORECASE), 'CONFIG_PROBE'),
     (regex_module.compile(r'database\.', regex_module.IGNORECASE), 'CONFIG_PROBE'),
     (regex_module.compile(r'\.sql', regex_module.IGNORECASE), 'CONFIG_PROBE'),
+    
+    # RCE (Remote Code Execution) exploits
+    (regex_module.compile(r'invokefunction', regex_module.IGNORECASE), 'RCE_EXPLOIT'),
+    (regex_module.compile(r'call_user_func', regex_module.IGNORECASE), 'RCE_EXPLOIT'),
+    (regex_module.compile(r'think\\\\app', regex_module.IGNORECASE), 'RCE_EXPLOIT'),  # ThinkPHP
+    (regex_module.compile(r'system\s*\(', regex_module.IGNORECASE), 'RCE_EXPLOIT'),
+    (regex_module.compile(r'exec\s*\(', regex_module.IGNORECASE), 'RCE_EXPLOIT'),
+    (regex_module.compile(r'shell_exec', regex_module.IGNORECASE), 'RCE_EXPLOIT'),
+    (regex_module.compile(r'passthru', regex_module.IGNORECASE), 'RCE_EXPLOIT'),
+    (regex_module.compile(r'proc_open', regex_module.IGNORECASE), 'RCE_EXPLOIT'),
+    (regex_module.compile(r'popen\s*\(', regex_module.IGNORECASE), 'RCE_EXPLOIT'),
+    
+    # Shell command probes (recon commands in URLs)
+    (regex_module.compile(r'\bprintenv\b', regex_module.IGNORECASE), 'SHELL_PROBE'),
+    (regex_module.compile(r'\bwhoami\b', regex_module.IGNORECASE), 'SHELL_PROBE'),
+    (regex_module.compile(r'\bid\b', regex_module.IGNORECASE), 'SHELL_PROBE'),
+    (regex_module.compile(r'\buname\b', regex_module.IGNORECASE), 'SHELL_PROBE'),
+    (regex_module.compile(r'\bcat\s+/', regex_module.IGNORECASE), 'SHELL_PROBE'),
+    (regex_module.compile(r'\bwget\s+', regex_module.IGNORECASE), 'SHELL_PROBE'),
+    (regex_module.compile(r'\bcurl\s+', regex_module.IGNORECASE), 'SHELL_PROBE'),
+    
+    # SSRF/DNS rebinding probes
+    (regex_module.compile(r'\bdns=', regex_module.IGNORECASE), 'SSRF_PROBE'),  # DNS-over-HTTPS style
+    (regex_module.compile(r'&type=A\b', regex_module.IGNORECASE), 'SSRF_PROBE'),  # DNS query type
+    (regex_module.compile(r'dnsmeasure', regex_module.IGNORECASE), 'SSRF_PROBE'),  # Known scanner domain
+    (regex_module.compile(r'\.oast\.', regex_module.IGNORECASE), 'SSRF_PROBE'),  # Burp collaborator
+    (regex_module.compile(r'interact\.sh', regex_module.IGNORECASE), 'SSRF_PROBE'),  # interactsh
+    (regex_module.compile(r'pingback\.', regex_module.IGNORECASE), 'SSRF_PROBE'),  # SSRF callback
 ]
 
 # In-memory blocked IP cache (loaded from DB on startup)
