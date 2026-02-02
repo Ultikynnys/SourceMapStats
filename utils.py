@@ -107,8 +107,170 @@ def is_valid_public_ip(ip_str):
 
 # ─── Request Tracking (for Admin Panel) ───────────────────────────────────────
 from datetime import datetime, timedelta
+import re as regex_module
 
 ADMIN_DB_FILE = os.path.join(BASE_DIR, "admin_stats.duckdb")
+
+# ─── Threat Detection & IP Blocking ───────────────────────────────────────────
+# Patterns that indicate malicious intent
+THREAT_PATTERNS = [
+    # XSS attempts
+    (regex_module.compile(r'<script', regex_module.IGNORECASE), 'XSS'),
+    (regex_module.compile(r'javascript:', regex_module.IGNORECASE), 'XSS'),
+    (regex_module.compile(r'on\w+\s*=', regex_module.IGNORECASE), 'XSS'),  # onclick=, onerror=, etc.
+    (regex_module.compile(r'<\s*\w+[^>]*\s+on\w+\s*=', regex_module.IGNORECASE), 'XSS'),
+    
+    # Path traversal
+    (regex_module.compile(r'\.\./', regex_module.IGNORECASE), 'PATH_TRAVERSAL'),
+    (regex_module.compile(r'\.\.\\\\', regex_module.IGNORECASE), 'PATH_TRAVERSAL'),
+    (regex_module.compile(r'/etc/passwd', regex_module.IGNORECASE), 'PATH_TRAVERSAL'),
+    (regex_module.compile(r'/etc/shadow', regex_module.IGNORECASE), 'PATH_TRAVERSAL'),
+    (regex_module.compile(r'\\\\windows\\\\', regex_module.IGNORECASE), 'PATH_TRAVERSAL'),
+    
+    # Command injection
+    (regex_module.compile(r'cmd\.exe', regex_module.IGNORECASE), 'CMD_INJECTION'),
+    (regex_module.compile(r'powershell', regex_module.IGNORECASE), 'CMD_INJECTION'),
+    (regex_module.compile(r'/bin/sh', regex_module.IGNORECASE), 'CMD_INJECTION'),
+    (regex_module.compile(r'/bin/bash', regex_module.IGNORECASE), 'CMD_INJECTION'),
+    (regex_module.compile(r'\|\s*\w+', regex_module.IGNORECASE), 'CMD_INJECTION'),  # | command
+    (regex_module.compile(r';\s*\w+', regex_module.IGNORECASE), 'CMD_INJECTION'),  # ; command
+    
+    # SQL injection
+    (regex_module.compile(r"'\s*(or|and)\s+.*=", regex_module.IGNORECASE), 'SQL_INJECTION'),
+    (regex_module.compile(r'union\s+select', regex_module.IGNORECASE), 'SQL_INJECTION'),
+    (regex_module.compile(r'drop\s+table', regex_module.IGNORECASE), 'SQL_INJECTION'),
+    
+    # Common vulnerability scanners
+    (regex_module.compile(r'\.env', regex_module.IGNORECASE), 'VULN_SCAN'),
+    (regex_module.compile(r'wp-admin', regex_module.IGNORECASE), 'VULN_SCAN'),
+    (regex_module.compile(r'phpMyAdmin', regex_module.IGNORECASE), 'VULN_SCAN'),
+    (regex_module.compile(r'\.git/', regex_module.IGNORECASE), 'VULN_SCAN'),
+    (regex_module.compile(r'\.htaccess', regex_module.IGNORECASE), 'VULN_SCAN'),
+    
+    # PHP-specific probes (not applicable but indicates scanner)
+    (regex_module.compile(r'XDEBUG_SESSION', regex_module.IGNORECASE), 'PHP_PROBE'),
+    (regex_module.compile(r'phpinfo', regex_module.IGNORECASE), 'PHP_PROBE'),
+    (regex_module.compile(r'\.php', regex_module.IGNORECASE), 'PHP_PROBE'),
+    (regex_module.compile(r'eval\s*\(', regex_module.IGNORECASE), 'PHP_PROBE'),
+    (regex_module.compile(r'base64_decode', regex_module.IGNORECASE), 'PHP_PROBE'),
+    
+    # WordPress/CMS probes
+    (regex_module.compile(r'wp-content', regex_module.IGNORECASE), 'CMS_PROBE'),
+    (regex_module.compile(r'wp-includes', regex_module.IGNORECASE), 'CMS_PROBE'),
+    (regex_module.compile(r'wp-login', regex_module.IGNORECASE), 'CMS_PROBE'),
+    (regex_module.compile(r'xmlrpc\.php', regex_module.IGNORECASE), 'CMS_PROBE'),
+    
+    # Config/backup file probes
+    (regex_module.compile(r'\.bak', regex_module.IGNORECASE), 'CONFIG_PROBE'),
+    (regex_module.compile(r'\.backup', regex_module.IGNORECASE), 'CONFIG_PROBE'),
+    (regex_module.compile(r'database\.', regex_module.IGNORECASE), 'CONFIG_PROBE'),
+    (regex_module.compile(r'\.sql', regex_module.IGNORECASE), 'CONFIG_PROBE'),
+]
+
+# In-memory blocked IP cache (loaded from DB on startup)
+_blocked_ips = {}  # ip -> {'reason': str, 'blocked_at': datetime, 'auto': bool}
+_threat_counts = {}  # ip -> count of threats detected (for auto-blocking)
+
+AUTO_BLOCK_THRESHOLD = 3  # Block after this many malicious requests
+
+def is_blocked_ip(ip: str) -> bool:
+    """Check if an IP is blocked."""
+    return ip in _blocked_ips
+
+def block_ip(ip: str, reason: str = "Manual block", auto: bool = False):
+    """Block an IP address."""
+    if ip in ADMIN_IPS:
+        logging.warning(f"Refusing to block admin IP: {ip}")
+        return False
+    
+    _blocked_ips[ip] = {
+        'reason': reason,
+        'blocked_at': datetime.now(),
+        'auto': auto
+    }
+    logging.warning(f"🚫 Blocked IP: {ip} (reason: {reason}, auto: {auto})")
+    
+    # Persist to database
+    try:
+        with duckdb.connect(ADMIN_DB_FILE) as con:
+            con.execute("""
+                INSERT OR REPLACE INTO blocked_ips (ip, reason, blocked_at, auto_blocked)
+                VALUES (?, ?, ?, ?)
+            """, [ip, reason, datetime.now(), auto])
+    except Exception as e:
+        logging.error(f"Failed to persist blocked IP: {e}")
+    
+    return True
+
+def unblock_ip(ip: str) -> bool:
+    """Unblock an IP address."""
+    if ip not in _blocked_ips:
+        return False
+    
+    del _blocked_ips[ip]
+    _threat_counts.pop(ip, None)
+    logging.info(f"✅ Unblocked IP: {ip}")
+    
+    try:
+        with duckdb.connect(ADMIN_DB_FILE) as con:
+            con.execute("DELETE FROM blocked_ips WHERE ip = ?", [ip])
+    except Exception as e:
+        logging.error(f"Failed to remove blocked IP from DB: {e}")
+    
+    return True
+
+def get_blocked_ips() -> list:
+    """Get list of all blocked IPs with details."""
+    return [
+        {'ip': ip, **details}
+        for ip, details in _blocked_ips.items()
+    ]
+
+def detect_threat(full_path: str) -> tuple:
+    """Check if a request path contains malicious patterns.
+    Returns (is_threat, threat_type) tuple."""
+    if not full_path:
+        return False, None
+    
+    # URL decode for better detection
+    from urllib.parse import unquote
+    decoded_path = unquote(full_path)
+    
+    for pattern, threat_type in THREAT_PATTERNS:
+        if pattern.search(decoded_path):
+            return True, threat_type
+    
+    return False, None
+
+def record_threat(ip: str, threat_type: str, full_path: str):
+    """Record a threat detection and auto-block if threshold exceeded."""
+    _threat_counts[ip] = _threat_counts.get(ip, 0) + 1
+    count = _threat_counts[ip]
+    
+    logging.warning(f"⚠️ Threat detected from {ip}: {threat_type} ({count}/{AUTO_BLOCK_THRESHOLD}) - {full_path[:100]}")
+    
+    if count >= AUTO_BLOCK_THRESHOLD and ip not in _blocked_ips:
+        block_ip(ip, f"Auto-blocked: {threat_type} (detected {count} threats)", auto=True)
+
+def load_blocked_ips():
+    """Load blocked IPs from the database into memory."""
+    try:
+        with duckdb.connect(ADMIN_DB_FILE) as con:
+            # Check if table exists first
+            try:
+                rows = con.execute("SELECT ip, reason, blocked_at, auto_blocked FROM blocked_ips").fetchall()
+                for ip, reason, blocked_at, auto in rows:
+                    _blocked_ips[ip] = {
+                        'reason': reason,
+                        'blocked_at': blocked_at,
+                        'auto': auto
+                    }
+                if _blocked_ips:
+                    logging.info(f"Loaded {len(_blocked_ips)} blocked IPs from database")
+            except:
+                pass  # Table doesn't exist yet, will be created by init_admin_db
+    except Exception as e:
+        logging.debug(f"Could not load blocked IPs: {e}")
 
 def init_admin_db():
     try:
@@ -124,6 +286,16 @@ def init_admin_db():
                 CREATE SEQUENCE IF NOT EXISTS seq_req_id START 1;
             """)
             
+            # Create blocked IPs table
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS blocked_ips (
+                    ip TEXT PRIMARY KEY,
+                    reason TEXT,
+                    blocked_at TIMESTAMP,
+                    auto_blocked BOOLEAN
+                );
+            """)
+            
             # Auto-repair sequence on startup (prod safety)
             # Find max ID and ensure sequence is ahead of it
             try:
@@ -135,6 +307,9 @@ def init_admin_db():
                 logging.error(f"Failed to reset/rebuild admin DB: {e}")
     except Exception as e:
         logging.error(f"Failed to init admin DB: {e}")
+    
+    # Load blocked IPs into memory
+    load_blocked_ips()
     
     # Cleanup and Rebuild on boot - MUST be outside the with block
     # so the connection is closed before rebuild tries to ATTACH the file
@@ -168,17 +343,33 @@ def rebuild_admin_db(days_to_keep=30):
                     full_path TEXT
                 );
                 CREATE SEQUENCE seq_req_id START 1;
+                
+                CREATE TABLE blocked_ips (
+                    ip TEXT PRIMARY KEY,
+                    reason TEXT,
+                    blocked_at TIMESTAMP,
+                    auto_blocked BOOLEAN
+                );
             """)
             
             # 2. Attach old DB and copy valid data
             con_new.execute(f"ATTACH '{ADMIN_DB_FILE}' AS old_db")
             
-            # Copy data older than cutoff
+            # Copy request_log data newer than cutoff
             con_new.execute("""
                 INSERT INTO request_log 
                 SELECT * FROM old_db.request_log 
                 WHERE timestamp >= ?
             """, [cutoff])
+            
+            # Copy all blocked IPs (no time cutoff for blocks)
+            try:
+                con_new.execute("""
+                    INSERT INTO blocked_ips 
+                    SELECT * FROM old_db.blocked_ips
+                """)
+            except:
+                pass  # Table might not exist in old DB
             
             copied_count = con_new.execute("SELECT count(*) FROM request_log").fetchone()[0]
             
@@ -288,18 +479,33 @@ def get_request_stats(page=1, limit=50, date_filter=None):
                     endpoint_counts[ep_r[0]] = ep_r[1]
 
                 recent_requests = []
+                threat_detected = False
+                threat_types = set()
                 for lr in logs_rows:
+                    full_path = lr[1]
+                    # Check if this request was malicious
+                    is_threat, threat_type = detect_threat(full_path)
+                    if is_threat:
+                        threat_detected = True
+                        threat_types.add(threat_type)
+                    
                     recent_requests.append({
                         'endpoint': lr[0],
-                        'full_path': lr[1],
-                        'timestamp': lr[2].strftime('%H:%M:%S')
+                        'full_path': full_path,
+                        'timestamp': lr[2].strftime('%H:%M:%S'),
+                        'is_threat': is_threat,
+                        'threat_type': threat_type
                     })
                 
                 ip_breakdown.append({
                     'ip': ip,
                     'total_requests': total_requests,
                     'endpoints': endpoint_counts,
-                    'recent_requests': recent_requests
+                    'recent_requests': recent_requests,
+                    'threat_detected': threat_detected,
+                    'threat_count': _threat_counts.get(ip, 0),
+                    'threat_types': list(threat_types),
+                    'is_blocked': is_blocked_ip(ip)
                 })
             
             # Total stats for header
@@ -354,6 +560,29 @@ def rate_limiter(fn):
     def wrapped(*args, **kwargs):
         global last_cleanup
         
+        ip = request.remote_addr or 'unknown'
+        
+        # Check if IP is blocked FIRST (before any other processing)
+        if is_blocked_ip(ip):
+            logging.debug(f"Blocked request from {ip}")
+            return jsonify({"error": "Access denied"}), 403
+        
+        # Get full path for threat detection
+        try:
+            full_path = request.full_path if request.full_path else request.path
+            if full_path.endswith('?'):
+                full_path = full_path[:-1]
+        except:
+            full_path = request.path
+        
+        # Detect threats in the request
+        is_threat, threat_type = detect_threat(full_path)
+        if is_threat:
+            record_threat(ip, threat_type, full_path)
+            # If already blocked (might have just crossed threshold), deny immediately
+            if is_blocked_ip(ip):
+                return jsonify({"error": "Access denied"}), 403
+        
         # Periodic cleanup of old entries to prevent memory leak
         now = time.time()
         if now - last_cleanup > CLEANUP_INTERVAL:
@@ -370,7 +599,6 @@ def rate_limiter(fn):
                 del REQUESTS_PER_IP[k]
             last_cleanup = now
 
-        ip = request.remote_addr or 'unknown'
         endpoint = request.endpoint or request.path
         
         # Track request for admin statistics

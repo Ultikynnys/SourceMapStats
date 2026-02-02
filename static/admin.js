@@ -2,6 +2,60 @@ let currentPage = 1;
 let currentLimit = 50;
 let totalPages = 1;
 
+// HTML escape to prevent XSS in admin panel
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Block an IP via API
+async function blockIP(ip, event) {
+    event.stopPropagation(); // Don't toggle the row
+    if (!confirm(`Block IP ${ip}?`)) return;
+
+    try {
+        const res = await fetch('/api/admin/block', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: ip, reason: 'Blocked from admin panel' })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(`✅ ${data.message}`);
+            loadStats(); // Refresh
+        } else {
+            alert(`❌ ${data.error || data.message}`);
+        }
+    } catch (err) {
+        alert(`Error: ${err.message}`);
+    }
+}
+
+// Unblock an IP via API
+async function unblockIP(ip, event) {
+    event.stopPropagation(); // Don't toggle the row
+    if (!confirm(`Unblock IP ${ip}?`)) return;
+
+    try {
+        const res = await fetch('/api/admin/unblock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: ip })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(`✅ ${data.message}`);
+            loadStats(); // Refresh
+        } else {
+            alert(`❌ ${data.error || data.message}`);
+        }
+    } catch (err) {
+        alert(`Error: ${err.message}`);
+    }
+}
+
 async function loadStats() {
     const tbody = document.getElementById('logTable');
     try {
@@ -52,13 +106,46 @@ async function loadStats() {
             const recentRows = (ip.recent_requests || []).map(req => `
                 <tr class="detail-row">
                     <td>${req.timestamp}</td>
-                    <td colspan="2" style="word-break: break-all; font-family: monospace;">${req.full_path}</td>
+                    <td colspan="2" style="word-break: break-all; font-family: monospace;" class="${req.is_threat ? 'threat-path' : ''}">${escapeHtml(req.full_path)}${req.is_threat ? ` <span class="threat-type-tag">${req.threat_type}</span>` : ''}</td>
                 </tr>
             `).join('');
 
+            // Determine row class based on threat/blocked status
+            let rowClass = 'summary-row';
+            if (ip.is_blocked) {
+                rowClass += ' blocked-row';
+            } else if (ip.threat_detected) {
+                rowClass += ' threat-row';
+            }
+
+            // Build badges
+            let badges = '';
+            if (ip.is_blocked) {
+                badges += '<span class="blocked-badge">BLOCKED</span>';
+            }
+            if (ip.threat_detected) {
+                badges += `<span class="threat-badge">THREAT (${ip.threat_count})</span>`;
+                ip.threat_types.forEach(t => {
+                    badges += `<span class="threat-type-tag">${t}</span>`;
+                });
+            }
+
+            // Block/Unblock button
+            let actionBtn = '';
+            if (ip.is_blocked) {
+                actionBtn = `<button class="unblock-btn" onclick="unblockIP('${ip.ip}', event)">Unblock</button>`;
+            } else if (ip.threat_detected) {
+                actionBtn = `<button class="block-btn" onclick="blockIP('${ip.ip}', event)">Block</button>`;
+            }
+
             return `
-    <tr class="summary-row" data-index="${index}">
-      <td><span class="toggle-icon">▶</span> ${ip.ip}</td>
+    <tr class="${rowClass}" data-index="${index}">
+      <td class="ip-cell">
+        <span class="toggle-icon">▶</span> 
+        ${ip.ip}
+        ${badges}
+        ${actionBtn}
+      </td>
       <td>${ip.total_requests}</td>
       <td class="endpoint-list">${endpoints}</td>
     </tr>

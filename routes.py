@@ -86,6 +86,7 @@ def index():
 
 # ─── Admin Panel Routes ─────────────────────────────────────────────────
 from utils import admin_only, is_admin_ip, get_request_stats, ADMIN_IPS, track_request
+from utils import get_blocked_ips, block_ip, unblock_ip, is_blocked_ip
 
 @bp.route("/admin")
 @admin_only
@@ -120,6 +121,59 @@ def admin_check():
     return jsonify({
         "is_admin": is_admin_ip(client_ip),
         "admin_enabled": len(ADMIN_IPS) > 0
+    })
+
+# ─── IP Blocking Management ─────────────────────────────────────────────
+@bp.route("/api/admin/blocked")
+@admin_only
+def admin_blocked_ips():
+    """Get list of all blocked IPs."""
+    blocked = get_blocked_ips()
+    # Convert datetime to string for JSON
+    for item in blocked:
+        if 'blocked_at' in item and item['blocked_at']:
+            item['blocked_at'] = item['blocked_at'].strftime('%Y-%m-%d %H:%M:%S')
+    return jsonify({
+        "blocked_ips": blocked,
+        "count": len(blocked)
+    })
+
+@bp.route("/api/admin/block", methods=["POST"])
+@admin_only
+def admin_block_ip():
+    """Block an IP address."""
+    data = request.get_json() or {}
+    ip = data.get('ip', '').strip()
+    reason = data.get('reason', 'Manual block from admin panel')
+    
+    if not ip:
+        return jsonify({"error": "IP address required"}), 400
+    
+    if is_admin_ip(ip):
+        return jsonify({"error": "Cannot block admin IP"}), 400
+    
+    success = block_ip(ip, reason, auto=False)
+    return jsonify({
+        "success": success,
+        "ip": ip,
+        "message": f"IP {ip} has been blocked" if success else f"Failed to block {ip}"
+    })
+
+@bp.route("/api/admin/unblock", methods=["POST"])
+@admin_only
+def admin_unblock_ip():
+    """Unblock an IP address."""
+    data = request.get_json() or {}
+    ip = data.get('ip', '').strip()
+    
+    if not ip:
+        return jsonify({"error": "IP address required"}), 400
+    
+    success = unblock_ip(ip)
+    return jsonify({
+        "success": success,
+        "ip": ip,
+        "message": f"IP {ip} has been unblocked" if success else f"IP {ip} was not blocked"
     })
 
 @bp.route("/debug-whoami")

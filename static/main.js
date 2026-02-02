@@ -72,23 +72,122 @@ function populateServerDropdown(data) {
 function setAllButtonsDisabled(disabled) {
   document.querySelectorAll("button").forEach(btn => btn.disabled = disabled);
 }
-/* Fetch wrapper */
+
+// Current fetch abort controller (for cancellation)
+let currentFetchController = null;
+let loadingStartTime = null;
+let loadingTimerInterval = null;
+
+// Update the loading overlay with elapsed time
+function updateLoadingTimer() {
+  if (!loadingStartTime) return;
+  const elapsed = Math.floor((Date.now() - loadingStartTime) / 1000);
+  const timerEl = document.getElementById('loadingTimer');
+  if (timerEl) {
+    timerEl.textContent = `Loading... ${elapsed}s`;
+  }
+}
+
+// Show loading overlay with timer
+function showLoading() {
+  const overlay = document.getElementById('chartOverlay');
+  if (overlay) {
+    overlay.style.display = 'flex';
+    // Add timer element if not present
+    let timerEl = document.getElementById('loadingTimer');
+    if (!timerEl) {
+      timerEl = document.createElement('div');
+      timerEl.id = 'loadingTimer';
+      timerEl.style.cssText = 'color: white; margin-top: 1rem; font-size: 1.2rem;';
+      overlay.appendChild(timerEl);
+    }
+    // Add cancel button if not present
+    let cancelBtn = document.getElementById('cancelLoadingBtn');
+    if (!cancelBtn) {
+      cancelBtn = document.createElement('button');
+      cancelBtn.id = 'cancelLoadingBtn';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText = 'margin-top: 1rem; padding: 0.5rem 1.5rem; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem;';
+      cancelBtn.onclick = cancelCurrentFetch;
+      overlay.appendChild(cancelBtn);
+    }
+    cancelBtn.style.display = 'block';
+    timerEl.textContent = 'Loading... 0s';
+  }
+  loadingStartTime = Date.now();
+  loadingTimerInterval = setInterval(updateLoadingTimer, 1000);
+}
+
+// Hide loading overlay
+function hideLoading() {
+  const overlay = document.getElementById('chartOverlay');
+  if (overlay) overlay.style.display = 'none';
+  if (loadingTimerInterval) {
+    clearInterval(loadingTimerInterval);
+    loadingTimerInterval = null;
+  }
+  loadingStartTime = null;
+}
+
+// Cancel current fetch request
+function cancelCurrentFetch() {
+  if (currentFetchController) {
+    currentFetchController.abort();
+    currentFetchController = null;
+  }
+  hideLoading();
+  const refreshBtn = document.getElementById('refreshChart');
+  if (refreshBtn) refreshBtn.disabled = false;
+}
+
+/* Fetch wrapper with timeout */
+const FETCH_TIMEOUT_MS = 60000; // 60 second timeout
+
 async function doFetch(url, options = {}) {
-  const res = await fetch(url, options);
-  if (res.status === 429) {
-    const d = await res.json().catch(() => ({}));
-    const cd = d.cooldown || 1;
-    alert(`Rate limited — cool-down ${cd}s`);
-    setAllButtonsDisabled(true);
-    setTimeout(() => setAllButtonsDisabled(false), cd * 1000);
-    throw new Error('Rate limited');
+  // Create abort controller for this request
+  currentFetchController = new AbortController();
+  const signal = currentFetchController.signal;
+
+  // Create timeout that will abort the request
+  const timeoutId = setTimeout(() => {
+    if (currentFetchController) {
+      currentFetchController.abort();
+    }
+  }, FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, { ...options, signal });
+    clearTimeout(timeoutId);
+
+    if (res.status === 429) {
+      const d = await res.json().catch(() => ({}));
+      const cd = d.cooldown || 1;
+      alert(`Rate limited — cool-down ${cd}s`);
+      setAllButtonsDisabled(true);
+      setTimeout(() => setAllButtonsDisabled(false), cd * 1000);
+      throw new Error('Rate limited');
+    }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.error || `HTTP ${res.status}`);
+    }
+    return res.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+
+    if (err.name === 'AbortError') {
+      // Check if it was a timeout or user cancellation
+      const elapsed = loadingStartTime ? Math.floor((Date.now() - loadingStartTime) / 1000) : 0;
+      if (elapsed >= FETCH_TIMEOUT_MS / 1000 - 1) {
+        throw new Error(`Request timed out after ${FETCH_TIMEOUT_MS / 1000} seconds. The server may be generating chart data - try again in a moment.`);
+      } else {
+        throw new Error('Request cancelled');
+      }
+    }
+    throw err;
+  } finally {
+    currentFetchController = null;
   }
-  if (!res.ok) {
-    const d = await res.json().catch(() => ({}));
-    alert(d.error || `HTTP ${res.status}`);
-    throw new Error(`HTTP error: ${res.status}`);
-  }
-  return res.json();
 }
 
 
@@ -387,11 +486,10 @@ function initDateRange(minDateStr, maxDateStr) {
 }
 
 /* Main chart update orchestrator */
-const updateChart = createThrottledFunction(async (showLoading = true) => {
-  const overlay = document.getElementById('chartOverlay');
+const updateChart = createThrottledFunction(async (showLoadingOverlay = true) => {
   const refreshBtn = document.getElementById('refreshChart');
 
-  if (showLoading && overlay) overlay.style.display = 'flex';
+  if (showLoadingOverlay) showLoading();
   refreshBtn.disabled = true;
 
   try {
@@ -404,9 +502,12 @@ const updateChart = createThrottledFunction(async (showLoading = true) => {
     }
   } catch (error) {
     console.error('Failed to update chart:', error);
-    alert('An error occurred while fetching chart data. Please check the console for details.');
+    // Don't alert for user cancellation
+    if (error.message !== 'Request cancelled') {
+      alert(error.message || 'An error occurred while fetching chart data.');
+    }
   } finally {
-    if (overlay) overlay.style.display = 'none';
+    hideLoading();
     refreshBtn.disabled = false;
   }
 }, 1000);
