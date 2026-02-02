@@ -131,14 +131,17 @@ def init_admin_db():
                 con.execute(f"DROP SEQUENCE IF EXISTS seq_req_id")
                 con.execute(f"CREATE SEQUENCE seq_req_id START {max_id + 1}")
                 logging.info(f"Admin DB sequence reset to {max_id + 1}")
-                
-                # Cleanup and Rebuild on boot
-                rebuild_admin_db(days_to_keep=30)
-                
             except Exception as e:
                 logging.error(f"Failed to reset/rebuild admin DB: {e}")
     except Exception as e:
         logging.error(f"Failed to init admin DB: {e}")
+    
+    # Cleanup and Rebuild on boot - MUST be outside the with block
+    # so the connection is closed before rebuild tries to ATTACH the file
+    try:
+        rebuild_admin_db(days_to_keep=30)
+    except Exception as e:
+        logging.error(f"Failed to rebuild admin DB on init: {e}")
 
 def rebuild_admin_db(days_to_keep=30):
     """Rebuilds the admin DB to enforce vacuuming and minimal file size."""
