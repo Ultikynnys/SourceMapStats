@@ -10,9 +10,6 @@ import numpy as np
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from utils import get_color, get_country
-import cProfile
-import pstats
-import io
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "sourcemapstats.duckdb")
@@ -584,12 +581,8 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     return future.result()
 
 def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent, top_servers, append_maps_containing, server_filter, only_servers_containing, cache_key):
-    logging.debug("Generating new chart data (Worker - PROFILED)...")
+    logging.debug("Generating new chart data (Worker)...")
     _start_time = time.time()
-    
-    # Profiler Start
-    pr = cProfile.Profile()
-    pr.enable()
 
     try:
         logging.debug("[Chart] Connecting to database (Replica)...")
@@ -685,35 +678,32 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
                 # Add a temporary 'server_name' column for filtering
                 # server_names_map is (ip, port) -> name
                 
-                # Optimization: df.apply is too slow.
-                # 1. Get unique (ip, port) pairs involved in this query
-                unique_servers = df[['ip', 'port']].drop_duplicates()
+                # Optimization: df.apply is too slow. iterrows is also slow (1s+ overhead for 10k rows).
+                # 1. Get unique (ip, port) pairs using efficient pandas/numpy operations
+                # Drop duplicates is fast
+                unique_combinations = df[['ip', 'port']].drop_duplicates().to_records(index=False)
                 
-                # 2. Find which of these unique servers match the filter
+                # 2. Find matches using fast list comprehension over primitive types
+                # to_records returns numpy record array, iterating it yields numpy records.
+                # Converting to list of tuples might be faster for simple python iteration?
+                # Actually zip(df.ip, df.port) is extremely fast if we don't care about uniqueness first,
+                # but drop_duplicates reduces 'n' significantly.
+                
                 matches = []
-                # Convert unique_servers to records for faster iteration or just iterate rows
-                # Since unique_servers is much smaller than df, iteration is acceptable here.
-                # However, iterating the global server_names_map might be faster if unique_servers is large?
-                # No, unique_servers is subset of involved data (filtered by date). 
-                # server_names_map includes ALL known servers.
-                # Better to iterate unique_servers.
-                
-                # Create a set of matching identifiers
-                matching_indices = []
-                for idx, row in unique_servers.iterrows():
-                    name = server_names_map.get((row['ip'], row['port']), "").lower()
+                for row in unique_combinations:
+                    # row is (ip, port)
+                    ip, port = row[0], row[1]
+                    name = server_names_map.get((ip, int(port)), "").lower()
                     if any(token in name for token in safe_tokens):
-                        matches.append((row['ip'], row['port']))
+                        matches.append((ip, port))
                 
                 if matches:
                     # 3. Create a DataFrame of allowed servers
                     allowed_df = pd.DataFrame(matches, columns=['ip', 'port'])
                     
                     # 4. Filter via Inner Join (Merge)
-                    # This is vectorised and much faster than row-wise apply
                     df = df.merge(allowed_df, on=['ip', 'port'], how='inner')
                 else:
-                    # No matches found, return empty df
                     df = df.iloc[0:0]
 
         except Exception as e:
@@ -1019,17 +1009,6 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
                     item['label'] = get_server_display_name(s_ip, s_port)
                 except:
                     pass
-
-    # Profiler End
-    pr.disable()
-    try:
-        s = io.StringIO()
-        sortby = 'cumulative'
-        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-        ps.print_stats(30) # Print top 30 expensive calls
-        logging.info(f"[Profiler Stats] requesting parameters: {cache_key}\n{s.getvalue()}")
-    except Exception:
-        logging.error("Failed to dump profiler stats")
 
     logging.info(f"[Chart] Generation complete in {time.time() - _start_time:.2f}s (datasets={len(datasets)}, ranking={len(ranking)})")
     g_chart_data_cache[cache_key] = {'timestamp': time.time(), 'data': result}
