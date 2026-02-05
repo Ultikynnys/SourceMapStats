@@ -729,6 +729,9 @@ def parse_chart_params(request_args) -> dict:
     # Server filter: 'ALL' or 'IP:PORT'
     server_filter = request_args.get('server_filter', 'ALL').strip() or 'ALL'
 
+    only_servers_containing_str = request_args.get('only_servers_containing', '')
+    only_servers_containing = [s.strip() for s in only_servers_containing_str.split(',') if s.strip()]
+
     # Apply clamping
     days_to_show = max(1, min(365, days_to_show))
     maps_to_show = max(1, min(50, maps_to_show))
@@ -747,6 +750,7 @@ def parse_chart_params(request_args) -> dict:
         'only_maps_containing': only_maps_containing,
         'append_maps_containing': append_maps_containing,
         'top_servers': top_servers,
-        'server_filter': server_filter
+        'server_filter': server_filter,
+        'only_servers_containing': only_servers_containing
     }
 

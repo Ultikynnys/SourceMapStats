@@ -44,6 +44,7 @@ DEFAULT_CHART_PARAMS = {
     'top_servers': 10,
     'append_maps_containing': None,
     'server_filter': 'ALL',
+    'only_servers_containing': [],
 }
 
 def init_db(db_path=DB_FILE):
@@ -529,6 +530,7 @@ def _precompute_default_chart_data():
             top_servers=DEFAULT_CHART_PARAMS['top_servers'],
             append_maps_containing=DEFAULT_CHART_PARAMS['append_maps_containing'],
             server_filter=DEFAULT_CHART_PARAMS['server_filter'],
+            only_servers_containing=DEFAULT_CHART_PARAMS['only_servers_containing'],
         )
         with g_served_lock:
             g_served_data['default_chart_data'] = chart_data
@@ -540,7 +542,7 @@ def refresh_served_cache():
     _update_served_cache_from_db()
     _precompute_default_chart_data()
 
-def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent, top_servers=10, append_maps_containing=None, server_filter=None):
+def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent, top_servers=10, append_maps_containing=None, server_filter=None, only_servers_containing=None):
     cache_key = (
         start_date_str,
         days_to_show,
@@ -551,7 +553,8 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
         bias_exponent,
         top_servers,
         tuple(append_maps_containing or []),
-        server_filter or 'ALL'
+        server_filter or 'ALL',
+        tuple(only_servers_containing or [])
     )
 
     cached_result = g_chart_data_cache.get(cache_key)
@@ -572,11 +575,12 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
         top_servers,
         append_maps_containing,
         server_filter,
+        only_servers_containing,
         cache_key
     )
     return future.result()
 
-def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent, top_servers, append_maps_containing, server_filter, cache_key):
+def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent, top_servers, append_maps_containing, server_filter, only_servers_containing, cache_key):
     logging.debug("Generating new chart data (Worker)...")
     _start_time = time.time()
 
@@ -664,6 +668,25 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
             if ip_str and port_val >= 0:
                 df = df[(df['ip'] == ip_str) & (df['port'] == port_val)]
         except Exception:
+            pass
+
+    if only_servers_containing:
+        try:
+            # We need to filter based on server names which are looked up via IP/Port
+            safe_tokens = [s.lower() for s in only_servers_containing if isinstance(s, str) and s]
+            if safe_tokens:
+                # Add a temporary 'server_name' column for filtering
+                # server_names_map is (ip, port) -> name
+                
+                def get_sname(row):
+                    return server_names_map.get((row['ip'], row['port']), "").lower()
+                
+                # Apply filter
+                # Optimization: Do it without creating a full column if possible, but map apply is easiest
+                mask = df.apply(lambda row: any(token in get_sname(row) for token in safe_tokens), axis=1)
+                df = df[mask]
+        except Exception as e:
+            logging.error(f"Error filtering by server name: {e}")
             pass
 
     if only_maps_containing:
@@ -777,12 +800,14 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
         })
 
     total_daily_players = df.groupby('date')['players'].sum()
-    total_daily_snapshots = df.groupby('date')['snapshot_id'].nunique()
-    daily_totals_df = (total_daily_players / total_daily_snapshots).fillna(0)
-    daily_totals = daily_totals_df.reindex(full_time_index, fill_value=0).round(percision).tolist()
+    # total_daily_snapshots = df.groupby('date')['snapshot_id'].nunique() # Incorrect: uses filtered snapshots
     
     # Use the globally calculated daily_total_snapshots (from snapshots table)
     daily_totals_indexed = daily_total_snapshots.set_index('date')['total_snapshots']
+    
+    # Align totals with the global time index
+    daily_totals_df = (total_daily_players.div(daily_totals_indexed, fill_value=0)).fillna(0)
+    daily_totals = daily_totals_df.reindex(full_time_index, fill_value=0).round(percision).tolist()
     snapshot_counts = daily_totals_indexed.reindex(full_time_index, fill_value=0).tolist()
 
     logging.debug(f"[Chart] Calculating per-server contributions...")

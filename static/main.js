@@ -107,7 +107,7 @@ function showLoading() {
       cancelBtn = document.createElement('button');
       cancelBtn.id = 'cancelLoadingBtn';
       cancelBtn.textContent = 'Cancel';
-      cancelBtn.style.cssText = 'margin-top: 1rem; padding: 0.5rem 1.5rem; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem;';
+      cancelBtn.className = 'cancel-btn';
       cancelBtn.onclick = cancelCurrentFetch;
       overlay.appendChild(cancelBtn);
     }
