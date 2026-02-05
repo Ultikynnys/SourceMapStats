@@ -33,6 +33,7 @@ g_served_data = {
     'default_chart_data': None,  
 }
 g_served_lock = threading.RLock() 
+g_replica_lock = threading.Lock() 
 
 DEFAULT_CHART_PARAMS = {
     'days_to_show': 7,
@@ -277,8 +278,11 @@ def load_server_names_from_db():
 def update_replica_db():
     try:
         if os.path.exists(DB_FILE):
-            shutil.copy2(DB_FILE, DB_REPLICA_FILE)
-            logging.info("Replica DB updated.")
+            # Synchronization: Prevent updating while reader is active
+            # If a long chart query is running, this will block until it finishes.
+            with g_replica_lock:
+                shutil.copy2(DB_FILE, DB_REPLICA_FILE)
+                logging.info("Replica DB updated.")
     except Exception as e:
         logging.warning(f"Failed to update replica DB: {e}")
 
@@ -474,33 +478,35 @@ def _update_served_cache_from_db():
     date_range = {'min_date': None, 'max_date': None}
     
     try:
-        with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con:
-            row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
-            latest = row[0] if row else None
-            if latest:
-                if isinstance(latest, str):
-                    try:
-                        latest_dt = datetime.strptime(latest, ReaderTimeFormat)
-                    except ValueError:
-                        latest_dt = datetime.fromisoformat(latest)
-                else:
-                    latest_dt = latest
-                freshness = latest_dt.strftime(ReaderTimeFormat)
-            
-            row = con.execute("SELECT min(timestamp), max(timestamp) FROM snaps").fetchone()
-            if row and row[0] is not None and row[1] is not None:
-                min_dt, max_dt = row[0], row[1]
-                if isinstance(min_dt, str):
-                    try:
-                        min_dt = datetime.strptime(min_dt, ReaderTimeFormat)
-                    except ValueError:
-                        min_dt = datetime.fromisoformat(min_dt)
-                if isinstance(max_dt, str):
-                    try:
-                        max_dt = datetime.strptime(max_dt, ReaderTimeFormat)
-                    except ValueError:
-                        max_dt = datetime.fromisoformat(max_dt)
-                date_range = {'min_date': min_dt.strftime('%Y-%m-%d'), 'max_date': max_dt.strftime('%Y-%m-%d')}
+        with g_replica_lock:
+            with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con:
+                row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
+                latest = row[0] if row else None
+                if latest:
+                    if isinstance(latest, str):
+                        try:
+                            latest_dt = datetime.strptime(latest, ReaderTimeFormat)
+                        except ValueError:
+                            latest_dt = datetime.fromisoformat(latest)
+                    else:
+                        latest_dt = latest
+                    
+                    freshness = latest_dt.strftime(ReaderTimeFormat)
+                
+                row = con.execute("SELECT min(timestamp), max(timestamp) FROM snaps").fetchone()
+                if row and row[0] is not None and row[1] is not None:
+                    min_dt, max_dt = row[0], row[1]
+                    if isinstance(min_dt, str):
+                        try:
+                            min_dt = datetime.strptime(min_dt, ReaderTimeFormat)
+                        except ValueError:
+                            min_dt = datetime.fromisoformat(min_dt)
+                    if isinstance(max_dt, str):
+                        try:
+                            max_dt = datetime.strptime(max_dt, ReaderTimeFormat)
+                        except ValueError:
+                            max_dt = datetime.fromisoformat(max_dt)
+                    date_range = {'min_date': min_dt.strftime('%Y-%m-%d'), 'max_date': max_dt.strftime('%Y-%m-%d')}
     except Exception as e:
         logging.debug(f"Failed to update served cache: {e}")
     
@@ -580,13 +586,29 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     )
     return future.result()
 
-def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent, top_servers, append_maps_containing, server_filter, only_servers_containing, cache_key):
+def _get_chart_data_worker(*args, **kwargs):
+    # Wrapper to enforce locking without re-indenting the massive body
+    with g_replica_lock:
+        return _get_chart_data_worker_impl(*args, **kwargs)
+
+def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent, top_servers, append_maps_containing, server_filter, only_servers_containing, cache_key):
     logging.debug("Generating new chart data (Worker)...")
     _start_time = time.time()
 
     try:
         logging.debug("[Chart] Connecting to database (Replica)...")
         with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con:
+                
+                # Check cache freshness inside the worker to be sure? 
+                # No, just run the query.
+                
+                # 1. Server Names Map (Global)
+                # We need this for filtering logic later (and for result labeling)
+                # It is already loaded in g_known_server_names by scanner/init?
+                # ...
+                
+                # Query logic
+                # ...
             row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
             max_date_in_data = row[0] if row else None
             if not max_date_in_data:
