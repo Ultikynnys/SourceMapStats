@@ -41,7 +41,8 @@ def get_data():
         bias_exponent=params['bias_exponent'],
         top_servers=params['top_servers'],
         append_maps_containing=params['append_maps_containing'],
-        server_filter=params['server_filter']
+        server_filter=params['server_filter'],
+        only_servers_containing=params['only_servers_containing']
     )
     return jsonify(chart_data)
 
