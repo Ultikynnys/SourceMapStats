@@ -678,13 +678,37 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
                 # Add a temporary 'server_name' column for filtering
                 # server_names_map is (ip, port) -> name
                 
-                def get_sname(row):
-                    return server_names_map.get((row['ip'], row['port']), "").lower()
+                # Optimization: df.apply is too slow.
+                # 1. Get unique (ip, port) pairs involved in this query
+                unique_servers = df[['ip', 'port']].drop_duplicates()
                 
-                # Apply filter
-                # Optimization: Do it without creating a full column if possible, but map apply is easiest
-                mask = df.apply(lambda row: any(token in get_sname(row) for token in safe_tokens), axis=1)
-                df = df[mask]
+                # 2. Find which of these unique servers match the filter
+                matches = []
+                # Convert unique_servers to records for faster iteration or just iterate rows
+                # Since unique_servers is much smaller than df, iteration is acceptable here.
+                # However, iterating the global server_names_map might be faster if unique_servers is large?
+                # No, unique_servers is subset of involved data (filtered by date). 
+                # server_names_map includes ALL known servers.
+                # Better to iterate unique_servers.
+                
+                # Create a set of matching identifiers
+                matching_indices = []
+                for idx, row in unique_servers.iterrows():
+                    name = server_names_map.get((row['ip'], row['port']), "").lower()
+                    if any(token in name for token in safe_tokens):
+                        matches.append((row['ip'], row['port']))
+                
+                if matches:
+                    # 3. Create a DataFrame of allowed servers
+                    allowed_df = pd.DataFrame(matches, columns=['ip', 'port'])
+                    
+                    # 4. Filter via Inner Join (Merge)
+                    # This is vectorised and much faster than row-wise apply
+                    df = df.merge(allowed_df, on=['ip', 'port'], how='inner')
+                else:
+                    # No matches found, return empty df
+                    df = df.iloc[0:0]
+
         except Exception as e:
             logging.error(f"Error filtering by server name: {e}")
             pass
