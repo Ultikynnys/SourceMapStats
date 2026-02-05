@@ -10,6 +10,9 @@ import numpy as np
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from utils import get_color, get_country
+import cProfile
+import pstats
+import io
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "sourcemapstats.duckdb")
@@ -581,8 +584,12 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     return future.result()
 
 def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent, top_servers, append_maps_containing, server_filter, only_servers_containing, cache_key):
-    logging.debug("Generating new chart data (Worker)...")
+    logging.debug("Generating new chart data (Worker - PROFILED)...")
     _start_time = time.time()
+    
+    # Profiler Start
+    pr = cProfile.Profile()
+    pr.enable()
 
     try:
         logging.debug("[Chart] Connecting to database (Replica)...")
@@ -1012,6 +1019,17 @@ def _get_chart_data_worker(start_date_str, days_to_show, only_maps_containing, m
                     item['label'] = get_server_display_name(s_ip, s_port)
                 except:
                     pass
+
+    # Profiler End
+    pr.disable()
+    try:
+        s = io.StringIO()
+        sortby = 'cumulative'
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        ps.print_stats(30) # Print top 30 expensive calls
+        logging.info(f"[Profiler Stats] requesting parameters: {cache_key}\n{s.getvalue()}")
+    except Exception:
+        logging.error("Failed to dump profiler stats")
 
     logging.info(f"[Chart] Generation complete in {time.time() - _start_time:.2f}s (datasets={len(datasets)}, ranking={len(ranking)})")
     g_chart_data_cache[cache_key] = {'timestamp': time.time(), 'data': result}
