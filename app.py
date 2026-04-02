@@ -2,6 +2,7 @@ import sys
 import os
 import threading
 import logging
+import logging.handlers
 import mimetypes
 import numpy as np
 from flask import Flask, request
@@ -11,7 +12,35 @@ from dotenv import load_dotenv
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # ─── logging setup ────────────────────────────────────────────────────────────
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sourcemapstats.log")
+
+# Create a formatter
+log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - [%(name)s] %(message)s')
+
+# Rotating File Handler (Max 5MB per file, keep 3 historical logs)
+file_handler = logging.handlers.RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
+file_handler.setFormatter(log_formatter)
+file_handler.setLevel(logging.INFO)
+
+# Console Handler
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(log_formatter)
+console_handler.setLevel(logging.INFO)
+
+# Configure Root Logger
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
+
+# ─── uncaught exception handler ───────────────────────────────────────────────
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    logging.critical("Uncaught exception (CRASH)", exc_info=(exc_type, exc_value, exc_traceback))
+
+sys.excepthook = handle_exception
 
 # ─── add local libs (pythonvalve + a2s) ───────────────────────────────────────
 import config

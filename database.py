@@ -564,7 +564,6 @@ def get_chart_data(start_date_str, days_to_show, only_maps_containing, maps_to_s
     )
 
     cached_result = g_chart_data_cache.get(cache_key)
-    cached_result = g_chart_data_cache.get(cache_key)
     if cached_result and (time.time() - cached_result['timestamp']) < CACHE_EXPIRY_SECONDS:
         logging.debug("Returning cached chart data.")
         return cached_result['data']
@@ -592,23 +591,13 @@ def _get_chart_data_worker(*args, **kwargs):
         return _get_chart_data_worker_impl(*args, **kwargs)
 
 def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containing, maps_to_show, percision, color_intensity, bias_exponent, top_servers, append_maps_containing, server_filter, only_servers_containing, cache_key):
-    logging.debug("Generating new chart data (Worker)...")
+    logging.debug("Generating new chart data (Worker - Optimized SQL)...")
     _start_time = time.time()
+    _step_time = _start_time
 
     try:
         logging.debug("[Chart] Connecting to database (Replica)...")
         with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con:
-                
-                # Check cache freshness inside the worker to be sure? 
-                # No, just run the query.
-                
-                # 1. Server Names Map (Global)
-                # We need this for filtering logic later (and for result labeling)
-                # It is already loaded in g_known_server_names by scanner/init?
-                # ...
-                
-                # Query logic
-                # ...
             row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
             max_date_in_data = row[0] if row else None
             if not max_date_in_data:
@@ -627,26 +616,123 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
                 logging.warning(f"Start date is out of range. Defaulting to last {days_to_show} days from max date: {start_date.date()}")
 
             end_date = pd.Timestamp(start_date) + pd.Timedelta(days=int(days_to_show))
-            date_range = pd.date_range(start=pd.Timestamp(start_date).date(), end=(pd.Timestamp(end_date).date() - pd.Timedelta(days=1)))
+            
+            # Bucketing interval
+            interval = '2 hours'
 
-            end_date = pd.Timestamp(start_date) + pd.Timedelta(days=int(days_to_show))
-            date_range = pd.date_range(start=pd.Timestamp(start_date).date(), end=(pd.Timestamp(end_date).date() - pd.Timedelta(days=1)))
+            # Build Filter Clauses for SQL
+            where_clauses = ["sn.timestamp >= ? AND sn.timestamp < ?"]
+            query_params = [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
 
-            logging.debug(f"[Chart] Querying samples_v2 from {start_date.date()} to {end_date.date()}...")
-            df_window = con.execute(
-                """
-                SELECT s.ip, s.port, m.name as map, sa.players, sn.timestamp, s.country_code, sn.guid as snapshot_id
+            # 1. Map Name Filter
+            if only_maps_containing:
+                safe_tokens = [re.escape(s)[:50] for s in only_maps_containing if isinstance(s, str) and s]
+                if safe_tokens:
+                    pattern = '(?i)' + '|'.join(safe_tokens)
+                    where_clauses.append("REGEXP_MATCHES(m.name, ?)")
+                    query_params.append(pattern)
+
+            # 2. Server Filter (IP:Port)
+            if server_filter and isinstance(server_filter, str) and server_filter.upper() != 'ALL':
+                try:
+                    ip_str, port_str = server_filter.split(':', 1)
+                    ip_str = ip_str.strip()
+                    port_val = int(port_str.strip())
+                    if ip_str and port_val >= 0:
+                        where_clauses.append("s.ip = ? AND s.port = ?")
+                        query_params.extend([ip_str, port_val])
+                except Exception:
+                    pass
+
+            # 3. Server Name Filter
+            if only_servers_containing:
+                safe_tokens = [re.escape(s)[:50] for s in only_servers_containing if isinstance(s, str) and s]
+                if safe_tokens:
+                    pattern = '(?i)' + '|'.join(safe_tokens)
+                    # We need to sub-select from server_names or join it
+                    where_clauses.append("""
+                        EXISTS (
+                            SELECT 1 FROM server_names snam 
+                            WHERE snam.ip = s.ip AND snam.port = s.port 
+                            AND REGEXP_MATCHES(snam.name, ?)
+                        )
+                    """)
+                    query_params.append(pattern)
+
+            where_str = " AND ".join(where_clauses)
+
+            # --- FETCH 1: Total Snapshots per Bucket (Global denominator) ---
+            # This is NOT filtered by maps/servers because it represents the global availability of the system
+            daily_total_snapshots_df = con.execute(
+                f"""
+                SELECT 
+                    time_bucket(INTERVAL '{interval}', timestamp) as date,
+                    COUNT(DISTINCT guid) as total_snapshots
+                FROM snaps 
+                WHERE timestamp >= ? AND timestamp < ?
+                GROUP BY 1
+                ORDER BY 1
+                """,
+                [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
+            ).df()
+            daily_total_snapshots_df['date'] = pd.to_datetime(daily_total_snapshots_df['date'])
+
+            # --- FETCH 2: Aggregated Player Sum per Map per Bucket (Filtered) ---
+            df_agg = con.execute(
+                f"""
+                SELECT 
+                    time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
+                    m.name as map,
+                    SUM(sa.players) as players
                 FROM samples_v2 sa
                 JOIN snaps sn ON sa.snapshot_id = sn.id
                 JOIN servers s ON sa.server_id = s.id
                 JOIN maps m ON sa.map_id = m.id
+                WHERE {where_str}
+                GROUP BY 1, 2
+                """,
+                query_params
+            ).df()
+            df_agg['date'] = pd.to_datetime(df_agg['date'])
+
+            # --- FETCH 3: Aggregated Player Sum per Server per Bucket (Filtered) ---
+            # Used for the "Top Servers" chart for the current view
+            df_server_agg = con.execute(
+                f"""
+                SELECT 
+                    time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
+                    s.ip, s.port,
+                    SUM(sa.players) as players
+                FROM samples_v2 sa
+                JOIN snaps sn ON sa.snapshot_id = sn.id
+                JOIN servers s ON sa.server_id = s.id
+                JOIN maps m ON sa.map_id = m.id
+                WHERE {where_str}
+                GROUP BY 1, 2, 3
+                """,
+                query_params
+            ).df()
+            df_server_agg['date'] = pd.to_datetime(df_server_agg['date'])
+
+            # --- FETCH 4: Global server stats (Unfiltered window) ---
+            # Used for the "Global Server Ranking" table
+            df_global_server_agg = con.execute(
+                f"""
+                SELECT 
+                    time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
+                    s.ip, s.port,
+                    SUM(sa.players) as players
+                FROM samples_v2 sa
+                JOIN snaps sn ON sa.snapshot_id = sn.id
+                JOIN servers s ON sa.server_id = s.id
                 WHERE sn.timestamp >= ? AND sn.timestamp < ?
+                GROUP BY 1, 2, 3
                 """,
                 [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
             ).df()
-            logging.debug(f"[Chart] Query complete, fetched {len(df_window)} rows in {time.time() - _start_time:.2f}s")
-            
-            # Helper to fetch server names
+            df_global_server_agg['date'] = pd.to_datetime(df_global_server_agg['date'])
+
+            # Helper to fetch server names for labeling
             server_names_map = {}
             try:
                 rows = con.execute("SELECT ip, port, name FROM server_names").fetchall()
@@ -656,144 +742,29 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
                 logging.debug(f"Failed to load server names: {e}")
 
     except Exception as e:
-        logging.error(f"Failed to load data from DuckDB: {e}")
+        logging.error(f"[Chart] Failed to load data from DuckDB: {e}")
         return {'labels': [], 'datasets': [], 'dailyTotals': [], 'snapshotCounts': [], 'ranking': [], 'shownMapsCount': 0, 'averageDailyPlayerCount': 0}
 
-    if df_window.empty:
+    if df_agg.empty:
         logging.warning("No data available for the selected parameters.")
         return {'labels': [], 'datasets': [], 'dailyTotals': [], 'snapshotCounts': [], 'ranking': [], 'shownMapsCount': 0, 'averageDailyPlayerCount': 0}
 
-    logging.debug(f"[Chart] Cleaning and normalizing data...")
-    df = df_window.copy()
+    logging.info(f"[Chart] SQL Aggregation complete in {time.time() - _step_time:.2f}s")
+    _step_time = time.time()
+
+    # --- PROCESS 1: Map Datasets ---
+    full_time_index = pd.date_range(start=pd.Timestamp(start_date).floor('2h'), end=pd.Timestamp(end_date).ceil('2h'), freq='2h')
+    full_time_index = full_time_index[(full_time_index >= pd.Timestamp(start_date)) & (full_time_index < pd.Timestamp(end_date))]
     
-    # DEBUG LOGGING
-    logging.debug(f"DEBUG: df dtypes: {df.dtypes}")
-    if not df.empty:
-        logging.debug(f"DEBUG: First row timestamp: {df.iloc[0]['timestamp']} (type: {type(df.iloc[0]['timestamp'])})")
-    
-    df['players'] = pd.to_numeric(df['players'], errors='coerce').fillna(0).astype(int)
-    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-    
-    # DEBUG LOGGING POST-CONVERSION
-    if not df.empty:
-         logging.debug(f"DEBUG: Post-conversion timestamp: {df.iloc[0]['timestamp']}")
-         null_ts = df['timestamp'].isna().sum()
-         logging.debug(f"DEBUG: Timestamps becoming NaT: {null_ts} / {len(df)}")
-         
-    df.dropna(subset=['timestamp'], inplace=True)
-
-    if server_filter and isinstance(server_filter, str) and server_filter.upper() != 'ALL':
-        try:
-            ip_str, port_str = server_filter.split(':', 1)
-            ip_str = ip_str.strip()
-            port_val = int(port_str.strip())
-            if ip_str and port_val >= 0:
-                df = df[(df['ip'] == ip_str) & (df['port'] == port_val)]
-        except Exception:
-            pass
-
-    if only_servers_containing:
-        try:
-            # We need to filter based on server names which are looked up via IP/Port
-            safe_tokens = [s.lower() for s in only_servers_containing if isinstance(s, str) and s]
-            if safe_tokens:
-                # Add a temporary 'server_name' column for filtering
-                # server_names_map is (ip, port) -> name
-                
-                # Optimization: df.apply is too slow. iterrows is also slow (1s+ overhead for 10k rows).
-                # 1. Get unique (ip, port) pairs using efficient pandas/numpy operations
-                # Drop duplicates is fast
-                unique_combinations = df[['ip', 'port']].drop_duplicates().to_records(index=False)
-                
-                # 2. Find matches using fast list comprehension over primitive types
-                # to_records returns numpy record array, iterating it yields numpy records.
-                # Converting to list of tuples might be faster for simple python iteration?
-                # Actually zip(df.ip, df.port) is extremely fast if we don't care about uniqueness first,
-                # but drop_duplicates reduces 'n' significantly.
-                
-                matches = []
-                for row in unique_combinations:
-                    # row is (ip, port)
-                    ip, port = row[0], row[1]
-                    name = server_names_map.get((ip, int(port)), "").lower()
-                    if any(token in name for token in safe_tokens):
-                        matches.append((ip, port))
-                
-                if matches:
-                    # 3. Create a DataFrame of allowed servers
-                    allowed_df = pd.DataFrame(matches, columns=['ip', 'port'])
-                    
-                    # 4. Filter via Inner Join (Merge)
-                    df = df.merge(allowed_df, on=['ip', 'port'], how='inner')
-                else:
-                    df = df.iloc[0:0]
-
-        except Exception as e:
-            logging.error(f"Error filtering by server name: {e}")
-            pass
-
-    if only_maps_containing:
-        try:
-            safe_tokens = [re.escape(s)[:50] for s in only_maps_containing if isinstance(s, str) and s]
-            if safe_tokens:
-                pattern = '|'.join(safe_tokens)
-                df = df[df['map'].str.contains(pattern, na=False, regex=True)]
-        except re.error:
-            pass
-
-    if df.empty:
-        logging.warning("No data available for the selected parameters.")
-        return {'labels': [], 'datasets': [], 'dailyTotals': [], 'snapshotCounts': [], 'ranking': [], 'shownMapsCount': 0, 'averageDailyPlayerCount': 0}
-
-    logging.debug(f"[Chart] Aggregating data ({len(df)} rows after filtering)...")
-    # bucket to 2 hours
-    df['date'] = df['timestamp'].dt.floor('2h')
-    
-    # 1. Calculate total snapshots per bucket (Global denominator) using the snapshots table
-    try:
-        with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con_snap:
-            # Optimize: Aggregate in DB directly using time_bucket
-            daily_total_snapshots = con_snap.execute(
-                """
-                SELECT 
-                    time_bucket(INTERVAL '2 hours', timestamp) as date,
-                    COUNT(DISTINCT guid) as total_snapshots
-                FROM snaps 
-                WHERE timestamp >= ? AND timestamp < ?
-                GROUP BY 1
-                ORDER BY 1
-                """,
-                [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
-            ).df()
-            # Ensure date is datetime for merging
-            daily_total_snapshots['date'] = pd.to_datetime(daily_total_snapshots['date'])
-    except Exception as e:
-        logging.error(f"[Chart] Failed to query snapshots table: {e}. Falling back to samples count.")
-        daily_total_snapshots = df.groupby('date')['snapshot_id'].nunique().reset_index()
-        daily_total_snapshots.rename(columns={'snapshot_id': 'total_snapshots'}, inplace=True)
-
-    # 2. Calculate total players per map per bucket
-    daily_player_sum = df.groupby(['date', 'map'])['players'].sum().reset_index()
-
-    # 3. Merge to get avg_players = sum(players) / total_snapshots
-    merged_df = pd.merge(daily_player_sum, daily_total_snapshots, on='date', how='left')
-    # Fill NaN total_snapshots with 1 to avoid division by zero (shouldn't happen if logic is correct)
-    merged_df['total_snapshots'] = merged_df['total_snapshots'].fillna(1)
-    
-    # "Average Players" is now the total player-seconds(ish) divided by the cached time intervals (snapshots)
+    # Merge with total snapshots to get avg_players
+    merged_df = pd.merge(df_agg, daily_total_snapshots_df, on='date', how='left')
+    merged_df['total_snapshots'] = merged_df['total_snapshots'].fillna(1).replace(0, 1)
     merged_df['avg_players'] = (merged_df['players'] / merged_df['total_snapshots']).round(percision)
     
-    # Calculate percentage share for the bucket
+    # Percentage calculation
     daily_total_avg_players = merged_df.groupby('date')['avg_players'].transform('sum')
     merged_df['player_percentage'] = (merged_df['avg_players'] / daily_total_avg_players.replace(0, 1) * 100).fillna(0)
 
-    logging.debug(f"[Chart] Preparing chart datasets...")
-    
-    # Construct a comprehensive time index for filling gaps
-    full_time_index = pd.date_range(start=pd.Timestamp(start_date).floor('2h'), end=pd.Timestamp(end_date).ceil('2h'), freq='2h')
-    # filtered to actual requested range
-    full_time_index = full_time_index[(full_time_index >= pd.Timestamp(start_date)) & (full_time_index < pd.Timestamp(end_date))]
-    
     top_maps = merged_df.groupby('map')['avg_players'].sum().nlargest(maps_to_show).index
     datasets = []
     for map_name in top_maps:
@@ -811,14 +782,14 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
         try:
             safe_tokens = [re.escape(s)[:50] for s in append_maps_containing if isinstance(s, str) and s]
             if safe_tokens:
-                pattern = '|'.join(safe_tokens)
+                pattern = '(?i)' + '|'.join(safe_tokens)
                 matched = merged_df[merged_df['map'].str.contains(pattern, na=False, regex=True)]['map'].unique().tolist()
                 appended_map_names = [m for m in matched if m not in set(top_maps)]
                 if appended_map_names:
                     avg_map = merged_df.groupby('map')['avg_players'].sum()
                     appended_map_names.sort(key=lambda m: float(avg_map.get(m, 0)), reverse=True)
         except re.error:
-            appended_map_names = []
+            pass
 
     for map_name in appended_map_names:
         map_data = merged_df[merged_df['map'] == map_name]
@@ -842,58 +813,38 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
             'borderWidth': 1
         })
 
-    total_daily_players = df.groupby('date')['players'].sum()
-    # total_daily_snapshots = df.groupby('date')['snapshot_id'].nunique() # Incorrect: uses filtered snapshots
-    
-    # Use the globally calculated daily_total_snapshots (from snapshots table)
-    daily_totals_indexed = daily_total_snapshots.set_index('date')['total_snapshots']
-    
-    # Align totals with the global time index
-    daily_totals_df = (total_daily_players.div(daily_totals_indexed, fill_value=0)).fillna(0)
+    # --- PROCESS 2: Daily Totals (Overall popularity line) ---
+    daily_total_players_sum = df_agg.groupby('date')['players'].sum()
+    daily_totals_indexed = daily_total_snapshots_df.set_index('date')['total_snapshots']
+    daily_totals_df = (daily_total_players_sum.div(daily_totals_indexed, fill_value=0)).fillna(0)
     daily_totals = daily_totals_df.reindex(full_time_index, fill_value=0).round(percision).tolist()
     snapshot_counts = daily_totals_indexed.reindex(full_time_index, fill_value=0).tolist()
 
-    logging.debug(f"[Chart] Calculating per-server contributions...")
+    # --- PROCESS 3: Server Contributions (View-specific) ---
     try:
-        srv_sum = df.groupby(['date', 'ip', 'port'])['players'].sum().reset_index()
-        srv = srv_sum.merge(
-            daily_totals_indexed.rename('snapshots'), left_on='date', right_index=True, how='left'
-        )
-        srv['snapshots'] = srv['snapshots'].fillna(1)
+        srv = df_server_agg.merge(daily_totals_indexed.rename('snapshots'), left_on='date', right_index=True, how='left')
+        srv['snapshots'] = srv['snapshots'].fillna(1).replace(0, 1)
         srv['avg_contrib'] = (srv['players'] / srv['snapshots']).fillna(0)
         srv['server'] = srv['ip'] + ':' + srv['port'].astype(str)
 
-        pivot = srv.pivot_table(index='date', columns='server', values='avg_contrib', aggfunc='sum')
-
-        if pivot.shape[1] > 0:
-            totals = pivot.sum(axis=0)
-            # Count only buckets that have actual snapshots (ignore gaps in data collection)
-            # A bucket has snapshots if there's any data at all in the pivot for that date
-            buckets_with_snapshots = daily_totals_indexed.reindex(full_time_index, fill_value=0)
-            num_valid_buckets = (buckets_with_snapshots > 0).sum()
-            num_valid_buckets = max(1, num_valid_buckets)  # Avoid division by zero
-            averages = (totals / num_valid_buckets).sort_values(ascending=False)
-        else:
-            averages = pd.Series([], dtype=float)
-
-        pivot = pivot.reindex(full_time_index, fill_value=0)
+        pivot = srv.pivot_table(index='date', columns='server', values='avg_contrib', aggfunc='sum').reindex(full_time_index, fill_value=0)
+        
+        num_valid_buckets = (daily_totals_indexed.reindex(full_time_index, fill_value=0) > 0).sum()
+        num_valid_buckets = max(1, num_valid_buckets)
+        averages = (pivot.sum(axis=0) / num_valid_buckets).sort_values(ascending=False)
 
         top_n = min(int(top_servers or 10), pivot.shape[1])
-        if top_n > 0:
-            top_servers_list = list(averages.head(top_n).index)
-            server_ranking = [{ 'id': srv, 'label': srv, 'pop': round(float(averages[srv]), 2) } for srv in top_servers_list]
-            if pivot.shape[1] > top_n:
-                other_val = float(averages.iloc[top_n:].sum())
-                if not np.isnan(other_val) and other_val > 0:
-                    server_ranking.append({ 'id': 'Other', 'label': 'Other', 'pop': round(other_val, 2) })
-        else:
-            top_servers_list = []
-            server_ranking = []
+        top_servers_list = list(averages.head(top_n).index) if top_n > 0 else []
+        server_ranking = [{ 'id': s, 'label': s, 'pop': round(float(averages[s]), 2) } for s in top_servers_list]
+        
+        if pivot.shape[1] > top_n:
+            other_val = float(averages.iloc[top_n:].sum())
+            if other_val > 0:
+                server_ranking.append({ 'id': 'Other', 'label': 'Other', 'pop': round(other_val, 2) })
 
         total_players_server_datasets = []
         for idx, server in enumerate(top_servers_list):
-            series = pivot[server] if server in pivot.columns else pd.Series([0]*len(pivot), index=pivot.index)
-            series = series.fillna(0)
+            series = pivot[server].fillna(0)
             total_players_server_datasets.append({
                 'label': server,
                 'data': list(series.round(percision).astype(float).values),
@@ -904,8 +855,7 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
             })
 
         if pivot.shape[1] > len(top_servers_list):
-            other_series = pivot.drop(columns=top_servers_list, errors='ignore').sum(axis=1)
-            other_series = other_series.fillna(0)
+            other_series = pivot.drop(columns=top_servers_list, errors='ignore').sum(axis=1).fillna(0)
             total_players_server_datasets.append({
                 'label': 'Other',
                 'data': list(other_series.round(percision).astype(float).values),
@@ -917,57 +867,43 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
     except Exception as e:
         logging.debug(f"Failed to compute per-server contributions: {e}")
         total_players_server_datasets = []
+        server_ranking = []
 
-    map_total_contrib = merged_df.groupby('map')['avg_players'].sum()
-    total_contrib_sum = map_total_contrib.sum()
-    ranking = []
-
-    if total_contrib_sum > 0:
-        top_maps_contrib = map_total_contrib[map_total_contrib.index.isin(top_maps)].sort_values(ascending=False)
-        ranking_df = (top_maps_contrib / total_contrib_sum * 100).round(2).reset_index(name='pop')
-        ranking_df.rename(columns={'map': 'label'}, inplace=True)
-        ranking = ranking_df.to_dict('records')
-
-        if appended_map_names:
-            app_maps_contrib = map_total_contrib[map_total_contrib.index.isin(appended_map_names)].sort_values(ascending=False)
-            app_rank_df = (app_maps_contrib / total_contrib_sum * 100).round(2).reset_index(name='pop')
-            app_rank_df.rename(columns={'map': 'label'}, inplace=True)
-            ranking += app_rank_df.to_dict('records')
-
-        if not other_maps_df.empty:
-            other_maps_contrib_sum = map_total_contrib[~map_total_contrib.index.isin(set(top_maps).union(set(appended_map_names)))].sum()
-            if other_maps_contrib_sum > 0:
-                other_pop = round((other_maps_contrib_sum / total_contrib_sum) * 100, 2)
-                ranking.append({'label': 'Other', 'pop': other_pop})
-
+    # --- PROCESS 4: Global Server Ranking (Window-specific) ---
     try:
-        dfw = df_window.copy()
-        dfw['timestamp'] = pd.to_datetime(dfw['timestamp'], errors='coerce')
-        dfw.dropna(subset=['timestamp'], inplace=True)
-        dfw['date'] = dfw['timestamp'].dt.date
-        daily_snapshots_w = dfw.groupby('date')['snapshot_id'].nunique()
-        srv_sum_w = dfw.groupby(['date', 'ip', 'port'])['players'].sum().reset_index()
-        srv_w = srv_sum_w.merge(
-            daily_snapshots_w.rename('snapshots'), left_on='date', right_index=True, how='left'
-        )
-        srv_w['snapshots'] = srv_w['snapshots'].replace(0, np.nan)
-        srv_w['avg_contrib'] = (srv_w['players'] / srv_w['snapshots']).fillna(0)
-        srv_w['server'] = srv_w['ip'] + ':' + srv_w['port'].astype(str)
-        pivot_w = srv_w.pivot_table(index='date', columns='server', values='avg_contrib', aggfunc='sum')
-        totals_w = pivot_w.sum(axis=0) if pivot_w.shape[1] > 0 else pd.Series([], dtype=float)
-        # Count only days that have actual snapshots (ignore gaps in data collection)
-        num_valid_days_w = (daily_snapshots_w > 0).sum() if len(daily_snapshots_w) > 0 else 1
-        num_valid_days_w = max(1, num_valid_days_w)  # Avoid division by zero
-        averages_w = (totals_w / num_valid_days_w).sort_values(ascending=False)
-        top_n_w = min(10, len(averages_w))
-        global_server_ranking = [{ 'label': srv, 'pop': round(float(averages_w[srv]), 2) } for srv in list(averages_w.head(top_n_w).index)]
-        if len(averages_w) > top_n_w:
-            other_val_w = float(averages_w.iloc[top_n_w:].sum())
-            if not np.isnan(other_val_w) and other_val_w > 0:
+        gsrv = df_global_server_agg.merge(daily_totals_indexed.rename('snapshots'), left_on='date', right_index=True, how='left')
+        gsrv['snapshots'] = gsrv['snapshots'].fillna(1).replace(0, 1)
+        gsrv['avg_contrib'] = (gsrv['players'] / gsrv['snapshots']).fillna(0)
+        gsrv['server'] = gsrv['ip'] + ':' + gsrv['port'].astype(str)
+        
+        # We can aggregate directly since we don't need a time series for global ranking
+        g_averages = (gsrv.groupby('server')['avg_contrib'].sum() / num_valid_buckets).sort_values(ascending=False)
+        top_n_w = min(10, len(g_averages))
+        global_server_ranking = [{ 'label': srv, 'pop': round(float(g_averages[srv]), 2) } for srv in list(g_averages.head(top_n_w).index)]
+        if len(g_averages) > top_n_w:
+            other_val_w = float(g_averages.iloc[top_n_w:].sum())
+            if other_val_w > 0:
                 global_server_ranking.append({ 'label': 'Other', 'pop': round(other_val_w, 2) })
     except Exception as e:
         logging.debug(f"Failed to compute global server ranking: {e}")
         global_server_ranking = []
+
+    # --- PROCESS 5: Map Ranking ---
+    map_total_contrib = merged_df.groupby('map')['avg_players'].sum()
+    total_contrib_sum = map_total_contrib.sum()
+    ranking = []
+    if total_contrib_sum > 0:
+        top_maps_contrib = map_total_contrib[map_total_contrib.index.isin(top_maps)].sort_values(ascending=False)
+        ranking = (top_maps_contrib / total_contrib_sum * 100).round(2).reset_index(name='pop').rename(columns={'map': 'label'}).to_dict('records')
+        
+        if appended_map_names:
+            app_maps_contrib = map_total_contrib[map_total_contrib.index.isin(appended_map_names)].sort_values(ascending=False)
+            ranking += (app_maps_contrib / total_contrib_sum * 100).round(2).reset_index(name='pop').rename(columns={'map': 'label'}).to_dict('records')
+
+        if not other_maps_df.empty:
+            other_maps_contrib_sum = map_total_contrib[~map_total_contrib.index.isin(other_exclude)].sum()
+            if other_maps_contrib_sum > 0:
+                ranking.append({'label': 'Other', 'pop': round((other_maps_contrib_sum / total_contrib_sum) * 100, 2)})
 
     def _sanitize_dataset_list(ds_list):
         out = []
@@ -977,9 +913,6 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
                 s['data'] = [0 if (isinstance(v, float) and (np.isnan(v))) else (float(v) if isinstance(v, (np.floating, np.integer)) else v) for v in s['data']]
             out.append(s)
         return out
-
-    if 'server_ranking' not in locals():
-        server_ranking = []
 
     result = {
         'labels': [d.isoformat() for d in full_time_index],
@@ -994,45 +927,25 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
         'appendedMapsCount': len(appended_map_names),
     }
 
-    # Helper to get display name
+    # Label Labeling (Server Names)
     def get_server_display_name(s_ip, s_port):
         try:
-            s_port = int(s_port)
-            name = server_names_map.get((s_ip, s_port))
-            if name:
-                return name
+            return server_names_map.get((s_ip, int(s_port)), f"{s_ip}:{s_port}")
         except:
-            pass
-        return f"{s_ip}:{s_port}"
+            return f"{s_ip}:{s_port}"
 
-    if 'serverRanking' in result:
-        for item in result['serverRanking']:
-            if ':' in item['label'] and item['label'] != 'Other':
-                try:
-                    s_ip, s_port = item['label'].split(':', 1)
-                    item['label'] = get_server_display_name(s_ip, s_port)
-                except:
-                    pass
+    for key in ['serverRanking', 'totalPlayersServerDatasets', 'globalServerRanking']:
+        if key in result:
+            for item in result[key]:
+                label = item.get('label')
+                if label and ':' in label and label != 'Other':
+                    try:
+                        s_ip, s_port = label.split(':', 1)
+                        item['label'] = get_server_display_name(s_ip, s_port)
+                    except:
+                        pass
 
-    if 'totalPlayersServerDatasets' in result:
-        for ds in result['totalPlayersServerDatasets']:
-            if ':' in ds['label'] and ds['label'] != 'Other':
-                 try:
-                    s_ip, s_port = ds['label'].split(':', 1)
-                    ds['label'] = get_server_display_name(s_ip, s_port)
-                 except:
-                    pass
-
-    if 'globalServerRanking' in result:
-        for item in result['globalServerRanking']:
-             if ':' in item['label'] and item['label'] != 'Other':
-                try:
-                    s_ip, s_port = item['label'].split(':', 1)
-                    item['label'] = get_server_display_name(s_ip, s_port)
-                except:
-                    pass
-
-    logging.info(f"[Chart] Generation complete in {time.time() - _start_time:.2f}s (datasets={len(datasets)}, ranking={len(ranking)})")
+    logging.info(f"[Chart] Generation complete in {time.time() - _start_time:.2f}s (results={len(datasets)})")
     g_chart_data_cache[cache_key] = {'timestamp': time.time(), 'data': result}
     return result
 

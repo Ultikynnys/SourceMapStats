@@ -118,13 +118,28 @@ def generate_mock_data(con, start_date=FIXED_START_DATE):
     # Use Pandas for super-fast insertion
     df_snaps = pd.DataFrame(snapshot_rows, columns=['snapshot_id', 'timestamp'])
     con.register('df_snaps_view', df_snaps)
-    con.execute("INSERT OR REPLACE INTO snapshots SELECT * FROM df_snaps_view")
+    con.execute("INSERT OR IGNORE INTO snaps (guid, timestamp) SELECT snapshot_id as guid, timestamp FROM df_snaps_view")
     con.unregister('df_snaps_view')
     
     print("Batch inserting samples (via Pandas)...")
     df_samples = pd.DataFrame(samples, columns=['ip', 'port', 'map_name', 'players', 'timestamp', 'region', 'snapshot_id'])
     con.register('df_samples_view', df_samples)
-    con.execute("INSERT INTO samples SELECT * FROM df_samples_view")
+    # We need to map sever/map names to IDs first for samples_v2
+    con.execute("INSERT OR IGNORE INTO servers (ip, port) SELECT DISTINCT ip, port FROM df_samples_view")
+    con.execute("INSERT OR IGNORE INTO maps (name) SELECT DISTINCT map_name FROM df_samples_view")
+    
+    con.execute("""
+        INSERT INTO samples_v2 (snapshot_id, server_id, map_id, players)
+        SELECT 
+            sn.id,
+            s.id,
+            m.id,
+            df.players
+        FROM df_samples_view df
+        JOIN snaps sn ON df.snapshot_id = sn.guid
+        JOIN servers s ON df.ip = s.ip AND df.port = s.port
+        JOIN maps m ON df.map_name = m.name
+    """)
     con.unregister('df_samples_view')
     
     return ground_truth, server_ground_truth, day_snapshot_counts
@@ -170,7 +185,7 @@ class TestAdvancedMath(unittest.TestCase):
             self.start_date = FIXED_START_DATE
             
             # Initialize the DB logic
-            database.init_db()
+            database.init_db(self.db_path)
         
         # Populate with Mock Data
         # Connect to the DB path we decided on
@@ -449,7 +464,7 @@ class TestAdvancedMath(unittest.TestCase):
         try:
             database.DB_FILE = db_path
             database.DB_REPLICA_FILE = replica_path
-            database.init_db()
+            database.init_db(db_path)
             
             # Create controlled test data
             with duckdb.connect(db_path) as con:
@@ -489,13 +504,26 @@ class TestAdvancedMath(unittest.TestCase):
                 
                 # Insert data
                 df_snaps = pd.DataFrame(snapshot_rows, columns=['snapshot_id', 'timestamp'])
+                # guid is expected by normalized schema
+                df_snaps['guid'] = df_snaps['snapshot_id']
                 con.register('df_snaps_view', df_snaps)
-                con.execute("INSERT OR REPLACE INTO snapshots SELECT * FROM df_snaps_view")
+                con.execute("INSERT OR IGNORE INTO snaps (guid, timestamp) SELECT guid, timestamp FROM df_snaps_view")
                 con.unregister('df_snaps_view')
                 
                 df_samples = pd.DataFrame(samples, columns=['ip', 'port', 'map_name', 'players', 'timestamp', 'region', 'snapshot_id'])
                 con.register('df_samples_view', df_samples)
-                con.execute("INSERT INTO samples SELECT * FROM df_samples_view")
+                
+                # Normalize via SQL
+                con.execute("INSERT OR IGNORE INTO servers (ip, port) SELECT DISTINCT ip, port FROM df_samples_view")
+                con.execute("INSERT OR IGNORE INTO maps (name) SELECT DISTINCT map_name FROM df_samples_view")
+                con.execute("""
+                    INSERT INTO samples_v2 (snapshot_id, server_id, map_id, players)
+                    SELECT sn.id, s.id, m.id, df.players
+                    FROM df_samples_view df
+                    JOIN snaps sn ON df.snapshot_id = sn.guid
+                    JOIN servers s ON df.ip = s.ip AND df.port = s.port
+                    JOIN maps m ON df.map_name = m.name
+                """)
                 con.unregister('df_samples_view')
             
             # Update replica
@@ -563,7 +591,7 @@ class TestAdvancedMath(unittest.TestCase):
         try:
             database.DB_FILE = db_path
             database.DB_REPLICA_FILE = replica_path
-            database.init_db()
+            database.init_db(db_path)
             
             # Create controlled test data with gaps
             with duckdb.connect(db_path) as con:
@@ -593,13 +621,24 @@ class TestAdvancedMath(unittest.TestCase):
                 
                 # Insert data
                 df_snaps = pd.DataFrame(snapshot_rows, columns=['snapshot_id', 'timestamp'])
+                df_snaps['guid'] = df_snaps['snapshot_id']
                 con.register('df_snaps_view', df_snaps)
-                con.execute("INSERT OR REPLACE INTO snapshots SELECT * FROM df_snaps_view")
+                con.execute("INSERT OR IGNORE INTO snaps (guid, timestamp) SELECT guid, timestamp FROM df_snaps_view")
                 con.unregister('df_snaps_view')
                 
                 df_samples = pd.DataFrame(samples, columns=['ip', 'port', 'map_name', 'players', 'timestamp', 'region', 'snapshot_id'])
                 con.register('df_samples_view', df_samples)
-                con.execute("INSERT INTO samples SELECT * FROM df_samples_view")
+                
+                con.execute("INSERT OR IGNORE INTO servers (ip, port) SELECT DISTINCT ip, port FROM df_samples_view")
+                con.execute("INSERT OR IGNORE INTO maps (name) SELECT DISTINCT map_name FROM df_samples_view")
+                con.execute("""
+                    INSERT INTO samples_v2 (snapshot_id, server_id, map_id, players)
+                    SELECT sn.id, s.id, m.id, df.players
+                    FROM df_samples_view df
+                    JOIN snaps sn ON df.snapshot_id = sn.guid
+                    JOIN servers s ON df.ip = s.ip AND df.port = s.port
+                    JOIN maps m ON df.map_name = m.name
+                """)
                 con.unregister('df_samples_view')
             
             # Update replica
@@ -678,7 +717,7 @@ class TestAdvancedMath(unittest.TestCase):
         try:
             database.DB_FILE = db_path
             database.DB_REPLICA_FILE = replica_path
-            database.init_db()
+            database.init_db(db_path)
             
             with duckdb.connect(db_path) as con:
                 samples = []
@@ -710,13 +749,24 @@ class TestAdvancedMath(unittest.TestCase):
                 
                 # Insert data
                 df_snaps = pd.DataFrame(snapshot_rows, columns=['snapshot_id', 'timestamp'])
+                df_snaps['guid'] = df_snaps['snapshot_id']
                 con.register('df_snaps_view', df_snaps)
-                con.execute("INSERT OR REPLACE INTO snapshots SELECT * FROM df_snaps_view")
+                con.execute("INSERT OR IGNORE INTO snaps (guid, timestamp) SELECT guid, timestamp FROM df_snaps_view")
                 con.unregister('df_snaps_view')
                 
                 df_samples = pd.DataFrame(samples, columns=['ip', 'port', 'map_name', 'players', 'timestamp', 'region', 'snapshot_id'])
                 con.register('df_samples_view', df_samples)
-                con.execute("INSERT INTO samples SELECT * FROM df_samples_view")
+                
+                con.execute("INSERT OR IGNORE INTO servers (ip, port) SELECT DISTINCT ip, port FROM df_samples_view")
+                con.execute("INSERT OR IGNORE INTO maps (name) SELECT DISTINCT map_name FROM df_samples_view")
+                con.execute("""
+                    INSERT INTO samples_v2 (snapshot_id, server_id, map_id, players)
+                    SELECT sn.id, s.id, m.id, df.players
+                    FROM df_samples_view df
+                    JOIN snaps sn ON df.snapshot_id = sn.guid
+                    JOIN servers s ON df.ip = s.ip AND df.port = s.port
+                    JOIN maps m ON df.map_name = m.name
+                """)
                 con.unregister('df_samples_view')
             
             # Update replica
