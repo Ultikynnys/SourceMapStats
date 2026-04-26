@@ -45,6 +45,7 @@ sys.excepthook = handle_exception
 # ─── add local libs (pythonvalve + a2s) ───────────────────────────────────────
 import config
 from config import BASE_DIR
+from certs import enforce_valid_tls_certificate
 
 # Modules
 # Note: database and scanner might use a2s, so we imported it implicitly by fixing sys.path
@@ -125,6 +126,7 @@ app.json = NumpyJSONProvider(app)
 
 if __name__ == '__main__':
     logging.info("Starting up...")
+    enforce_valid_tls_certificate()
     
     # Initialize DB
     database.init_db()
