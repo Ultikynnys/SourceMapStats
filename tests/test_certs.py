@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import certs
 
@@ -81,6 +81,33 @@ class TestCertificateValidation(unittest.TestCase):
                 "key.pem",
                 now=datetime(2026, 5, 1, tzinfo=timezone.utc),
             )
+
+    @patch("certs.socket.create_connection")
+    @patch("certs.ssl.create_default_context")
+    def test_live_tls_endpoint_uses_verified_hostname(self, context_factory, connect):
+        context = Mock()
+        context_factory.return_value = context
+        socket_context = Mock()
+        tls_context = Mock()
+        connect.return_value.__enter__.return_value = socket_context
+        context.wrap_socket.return_value = MagicMock()
+        context.wrap_socket.return_value.__enter__.return_value = tls_context
+
+        certs.validate_live_tls_endpoint("example.test", port=443, timeout=2)
+
+        connect.assert_called_once_with(("example.test", 443), timeout=2)
+        context.wrap_socket.assert_called_once_with(
+            socket_context,
+            server_hostname="example.test",
+        )
+
+    @patch("certs.socket.create_connection", side_effect=OSError("refused"))
+    def test_live_tls_endpoint_failure_raises(self, _connect):
+        with self.assertRaisesRegex(
+            certs.CertificateValidationError,
+            "Live TLS validation failed",
+        ):
+            certs.validate_live_tls_endpoint("example.test", port=443, timeout=2)
 
 
 if __name__ == "__main__":

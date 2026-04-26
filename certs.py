@@ -1,6 +1,7 @@
 import os
 import ssl
 import ipaddress
+import socket
 from datetime import datetime, timezone
 
 
@@ -53,6 +54,25 @@ def enforce_valid_tls_certificate():
 
     domain, cert_path, key_path = get_tls_certificate_config()
     validate_tls_certificate(domain, cert_path, key_path)
+    validate_live_tls_endpoint(domain)
+
+
+def validate_live_tls_endpoint(domain, port=None, timeout=None):
+    if not domain:
+        raise CertificateValidationError("DOMAIN_NAME is required for live TLS validation")
+
+    port = int(port or os.getenv("TLS_VERIFY_PORT", "443"))
+    timeout = float(timeout or os.getenv("TLS_VERIFY_TIMEOUT_SECONDS", "5"))
+
+    try:
+        context = ssl.create_default_context()
+        with socket.create_connection((domain, port), timeout=timeout) as sock:
+            with context.wrap_socket(sock, server_hostname=domain):
+                return
+    except Exception as exc:
+        raise CertificateValidationError(
+            f"Live TLS validation failed for {domain}:{port}"
+        ) from exc
 
 
 def _validate_certificate_dates(decoded_cert, now, cert_path):
