@@ -28,6 +28,7 @@ BASE_SKIP_DURATION = 60
 MAX_SKIP_DURATION = 600
 SERVER_TIMEOUT = 2.0 # Default start timeout
 SCAN_INTERVAL = 300 # 5 minutes
+REPLICA_UPDATE_INTERVAL = 3600 # Replica is now a periodic backup, not the live read path
 
 # Load cooldowns on module load (or when starting the scanner)
 server_cooldowns = load_cooldowns_from_db()
@@ -135,6 +136,7 @@ def scan_loop():
     
     logging.info("Running initial database rebuild/compaction...")
     rebuild_database()
+    last_replica_update_time = time.time()
 
     cycles_count = 0
     last_rebuild_date = datetime.now().date()  # Track last rebuild date
@@ -206,7 +208,12 @@ def scan_loop():
         timings['save_cooldowns'] = time.time() - t_start
         
         t_start = time.time()
-        replica_profile = update_replica_db()
+        replica_profile = None
+        if time.time() - last_replica_update_time >= REPLICA_UPDATE_INTERVAL:
+            replica_profile = update_replica_db()
+            last_replica_update_time = time.time()
+        else:
+            logging.info("Replica DB update skipped; live reads use the main DB and backup interval has not elapsed.")
         timings['update_replica'] = time.time() - t_start
         if replica_profile:
             timings['update_replica.copy'] = replica_profile['copy']

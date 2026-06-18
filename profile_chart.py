@@ -26,7 +26,7 @@ def profile_current_approach():
         df_window = con.execute(
             """
             SELECT s.ip, s.port, m.name as map, sa.players, sn.timestamp, s.country_code, sn.guid as snapshot_id
-            FROM samples_v2 sa
+            FROM samples_all sa
             JOIN snaps sn ON sa.snapshot_id = sn.id
             JOIN servers s ON sa.server_id = s.id
             JOIN maps m ON sa.map_id = m.id
@@ -73,7 +73,7 @@ def profile_optimized_sql():
                 time_bucket(INTERVAL '2 hours', sn.timestamp) as bucket,
                 m.name as map,
                 SUM(sa.players) as total_players
-            FROM samples_v2 sa
+            FROM samples_all sa
             JOIN snaps sn ON sa.snapshot_id = sn.id
             JOIN maps m ON sa.map_id = m.id
             WHERE sn.timestamp >= ? AND sn.timestamp < ?
