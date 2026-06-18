@@ -2,8 +2,6 @@ import time
 import logging
 import socket
 import re
-import duckdb
-import pandas as pd
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
@@ -16,10 +14,8 @@ from database import (
     update_replica_db,
     refresh_served_cache,
     record_snapshot,
-    DB_FILE,
     ReaderTimeFormat,
     get_recent_ips,
-    maintenance,
     rebuild_database
 )
 from steam_api import get_server_list
@@ -35,6 +31,25 @@ SCAN_INTERVAL = 300 # 5 minutes
 
 # Load cooldowns on module load (or when starting the scanner)
 server_cooldowns = load_cooldowns_from_db()
+
+def _set_server_cooldown(server_key, timeout, failures, skip_until):
+    server_cooldowns[server_key] = {
+        'timeout': timeout,
+        'failures': failures,
+        'skip_until': skip_until
+    }
+
+def _record_server_failure(server_key, cooldown, now, reason, detail=None):
+    ip_str, port = server_key
+    failures = cooldown['failures'] + 1
+    new_timeout = min(MAX_SINGLE_IP_TIMEOUT, cooldown['timeout'] * 2)
+    skip_duration = min(MAX_SKIP_DURATION, BASE_SKIP_DURATION * (2 ** (failures - 1)))
+    skip_until = now + skip_duration
+    message = f"{reason} for {ip_str}:{port}"
+    if detail:
+        message += f": {detail}"
+    logging.debug(f"{message} (failure #{failures}, skip for {skip_duration}s)")
+    _set_server_cooldown(server_key, new_timeout, failures, skip_until)
 
 def IpReader(ip):
     """Query single game server, return CSV row or None."""
@@ -60,48 +75,18 @@ def IpReader(ip):
         map_name = re.sub(r'[\r\n\x00-\x1F\x7F-\x9F]', '', info.map_name).strip()
         timestamp = datetime.now().strftime(ReaderTimeFormat)
         
-        # Log successful connection
-        # Log successful connection
         logging.debug(f"OK {ip_str}:{port} | {info.player_count} players | {map_name}")
         
         # Success! Reduce timeout and reset failure count
-        server_cooldowns[server_key] = {
-            'timeout': max(0.1, timeout * 0.9),
-            'failures': 0,
-            'skip_until': 0
-        }
+        _set_server_cooldown(server_key, max(0.1, timeout * 0.9), 0, 0)
         return [ip_str, str(port), map_name, str(info.player_count), timestamp, sanitize_server_name(str(info.server_name))]
 
     except (socket.timeout, ConnectionResetError):
-        failures = cooldown['failures'] + 1
-        new_timeout = min(MAX_SINGLE_IP_TIMEOUT, timeout * 2)  # Double timeout on failure
-        
-        # Exponential backoff
-        skip_duration = min(MAX_SKIP_DURATION, BASE_SKIP_DURATION * (2 ** (failures - 1)))
-        skip_until = now + skip_duration
-        logging.debug(f"Timeout for {ip_str}:{port} (failure #{failures}, skip for {skip_duration}s)")
-        
-        server_cooldowns[server_key] = {
-            'timeout': new_timeout,
-            'failures': failures,
-            'skip_until': skip_until
-        }
+        _record_server_failure(server_key, cooldown, now, "Timeout")
         return None
-        
+
     except Exception as e:
-        failures = cooldown['failures'] + 1
-        new_timeout = min(MAX_SINGLE_IP_TIMEOUT, timeout * 2)
-        
-        skip_duration = min(MAX_SKIP_DURATION, BASE_SKIP_DURATION * (2 ** (failures - 1)))
-        skip_until = now + skip_duration
-        
-        logging.debug(f"Error for {ip_str}:{port}: {str(e)}")
-        
-        server_cooldowns[server_key] = {
-            'timeout': new_timeout,
-            'failures': failures,
-            'skip_until': skip_until
-        }
+        _record_server_failure(server_key, cooldown, now, "Error", str(e))
         return None
 
 def IpReaderMulti(lst, snapshot_id, snapshot_dt_str):
@@ -176,7 +161,6 @@ def scan_loop():
             continue
 
         # Also scan IPs seen in the DB recently
-        # Also scan IPs seen in the DB recently
         t_start = time.time()
         recent_ips = get_recent_ips(days=7)
         if recent_ips:
@@ -204,8 +188,14 @@ def scan_loop():
         timings['record_snapshot'] = time.time() - t_start
 
         t_start = time.time()
-        write_samples(results)
+        write_profile = write_samples(results)
         timings['write_samples'] = time.time() - t_start
+        if write_profile:
+            for key in ('parse', 'df', 'maps', 'servers', 'samples', 'unregister', 'db'):
+                if key in write_profile:
+                    timings[f'write_samples.{key}'] = write_profile[key]
+            timings['write_samples.input_rows'] = write_profile.get('input_rows', len(results))
+            timings['write_samples.parsed_rows'] = write_profile.get('parsed_rows', 0)
 
         t_start = time.time()
         save_server_names_to_db(results)
@@ -216,8 +206,12 @@ def scan_loop():
         timings['save_cooldowns'] = time.time() - t_start
         
         t_start = time.time()
-        update_replica_db()
+        replica_profile = update_replica_db()
         timings['update_replica'] = time.time() - t_start
+        if replica_profile:
+            timings['update_replica.copy'] = replica_profile['copy']
+            timings['update_replica.lock_wait'] = replica_profile['lock_wait']
+            timings['update_replica.size_mb'] = replica_profile['size_mb']
         
         # Daily database rebuild/compaction (runs once per day when date changes)
         current_date = datetime.now().date()
@@ -243,7 +237,12 @@ def scan_loop():
         # Log performance profile
         profile_msg = ["Performance Profile:"]
         for step, duration in timings.items():
-            profile_msg.append(f"  {step}: {duration:.4f}s")
+            if step.endswith('_rows'):
+                profile_msg.append(f"  {step}: {int(duration)}")
+            elif step.endswith('_mb'):
+                profile_msg.append(f"  {step}: {duration:.2f}MB")
+            else:
+                profile_msg.append(f"  {step}: {duration:.4f}s")
         logging.info("\n".join(profile_msg))
 
         logging.info(f"Scan took {elapsed:.2f}s. Sleeping for {sleep_time:.2f}s.")

@@ -21,6 +21,20 @@ CACHE_EXPIRY_SECONDS = 300
 CHART_WORKERS = 4
 query_executor = ThreadPoolExecutor(max_workers=CHART_WORKERS)
 
+def _parse_datetime(value):
+    if not isinstance(value, str):
+        return value
+    try:
+        return datetime.strptime(value, ReaderTimeFormat)
+    except ValueError:
+        return datetime.fromisoformat(value)
+
+def _regex_filter_pattern(values):
+    safe_tokens = [re.escape(s)[:50] for s in values or [] if isinstance(s, str) and s]
+    if not safe_tokens:
+        return None
+    return '(?i)' + '|'.join(safe_tokens)
+
 # ─── data cache ───────────────────────────────────────────────────────────────
 g_chart_data_cache = {}
 g_known_server_names = {} # (ip, port) -> name
@@ -174,7 +188,6 @@ def init_db(db_path=DB_FILE):
         logging.error(f"Failed to initialize DuckDB: {e}")
     
     # Always sync replica on startup to ensure schema changes propagate
-    # Always sync replica on startup to ensure schema changes propagate
     if os.path.exists(db_path) and db_path == DB_FILE:
         update_replica_db()
         load_server_names_from_db()
@@ -280,11 +293,30 @@ def update_replica_db():
         if os.path.exists(DB_FILE):
             # Synchronization: Prevent updating while reader is active
             # If a long chart query is running, this will block until it finishes.
+            copy_start = time.time()
+            db_size_mb = os.path.getsize(DB_FILE) / 1024 / 1024
             with g_replica_lock:
+                lock_wait = time.time() - copy_start
+                file_copy_start = time.time()
                 shutil.copy2(DB_FILE, DB_REPLICA_FILE)
-                logging.info("Replica DB updated.")
+                file_copy_duration = time.time() - file_copy_start
+                total_duration = time.time() - copy_start
+                logging.info(
+                    "Replica DB updated in %.2fs (copy=%.2fs, lock_wait=%.2fs, size=%.2fMB).",
+                    total_duration,
+                    file_copy_duration,
+                    lock_wait,
+                    db_size_mb,
+                )
+                return {
+                    'total': total_duration,
+                    'copy': file_copy_duration,
+                    'lock_wait': lock_wait,
+                    'size_mb': db_size_mb,
+                }
     except Exception as e:
         logging.warning(f"Failed to update replica DB: {e}")
+    return None
 
 def load_cooldowns_from_db():
     cooldowns = {}
@@ -384,10 +416,7 @@ def save_server_names_to_db(rows):
 def record_snapshot(snapshot_id, snapshot_dt_str):
     try:
         with duckdb.connect(DB_FILE) as con:
-            try:
-                ts = datetime.strptime(snapshot_dt_str, ReaderTimeFormat)
-            except ValueError:
-                ts = datetime.fromisoformat(snapshot_dt_str)
+            ts = _parse_datetime(snapshot_dt_str)
             
             con.execute(
                 "INSERT OR IGNORE INTO snaps (guid, timestamp) VALUES (?, ?)",
@@ -400,6 +429,8 @@ def write_samples(rows):
     if not rows:
         return
 
+    total_start = time.time()
+    parse_start = time.time()
     prepared_rows = []
     for row in rows:
         try:
@@ -408,62 +439,98 @@ def write_samples(rows):
             map_name = row[2]
             players = int(row[3]) if row[3] is not None else 0
             ts_raw = row[4]
-            try:
-                ts = datetime.strptime(ts_raw, ReaderTimeFormat)
-            except ValueError:
-                ts = datetime.fromisoformat(ts_raw)
+            ts = _parse_datetime(ts_raw)
             snapshot_id = row[6] if len(row) > 6 else None
             country_code = get_country(ip)
             prepared_rows.append((ip, port, map_name, players, ts, country_code, snapshot_id))
         except Exception as e:
             logging.debug(f"Skipping row due to parse error: {row} ({e})")
+    parse_duration = time.time() - parse_start
 
     if not prepared_rows:
-        return
+        logging.info(
+            "[DB] write_samples skipped: input_rows=%d parsed_rows=0 parse=%.4fs",
+            len(rows),
+            parse_duration,
+        )
+        return {
+            'input_rows': len(rows),
+            'parsed_rows': 0,
+            'parse': parse_duration,
+            'total': time.time() - total_start,
+        }
 
     try:
         with duckdb.connect(DB_FILE) as con:
-            # Upsert maps
-            maps = list(set(r[2] for r in prepared_rows))
-            con.execute("INSERT OR IGNORE INTO maps (name) SELECT * FROM (VALUES " + ",".join(["(?)"] * len(maps)) + ")", maps)
-            
-            # Upsert servers
-            # We want unique ip,port. 
-            # Note: duckdb executemany might be slow if we do complex upserts.
-            # Best is to just insert ignore.
-            servers = {} # (ip, port) -> country
-            for r in prepared_rows:
-                servers[(r[0], r[1])] = r[5]
-            
-            # Prepare server tuples
-            srv_tuples = [(ip, port, code) for (ip, port), code in servers.items()]
-            con.executemany("INSERT OR IGNORE INTO servers (ip, port, country_code) VALUES (?, ?, ?)", srv_tuples)
-             
-            # Now we need IDs to insert into samples_v2
-            # For bulk performance, we can load these into temp tables and join
-            
-            con.execute("CREATE TEMPORARY TABLE IF NOT EXISTS temp_raw_samples (ip TEXT, port INTEGER, map TEXT, players INTEGER, guid TEXT)")
-            con.execute("DELETE FROM temp_raw_samples")
-            
-            raw_tuples = [(r[0], r[1], r[2], r[3], r[6]) for r in prepared_rows]
-            con.executemany("INSERT INTO temp_raw_samples VALUES (?,?,?,?,?)", raw_tuples)
-            
+            db_start = time.time()
+
+            df_start = time.time()
+            df = pd.DataFrame(
+                prepared_rows,
+                columns=['ip', 'port', 'map', 'players', 'timestamp', 'country_code', 'guid']
+            )
+            con.register('raw_samples_df', df)
+            df_duration = time.time() - df_start
+
+            maps_start = time.time()
+            con.execute("INSERT OR IGNORE INTO maps (name) SELECT DISTINCT map FROM raw_samples_df")
+            maps_duration = time.time() - maps_start
+
+            servers_start = time.time()
+            con.execute("""
+                INSERT OR IGNORE INTO servers (ip, port, country_code)
+                SELECT ip, port, max(country_code)
+                FROM raw_samples_df
+                GROUP BY ip, port
+            """)
+            servers_duration = time.time() - servers_start
+
+            samples_start = time.time()
             con.execute("""
                 INSERT INTO samples_v2 (snapshot_id, server_id, map_id, players)
                 SELECT 
                     sn.id, s.id, m.id, t.players
-                FROM temp_raw_samples t
+                FROM raw_samples_df t
                 JOIN snaps sn ON t.guid = sn.guid
                 JOIN servers s ON t.ip = s.ip AND t.port = s.port
                 JOIN maps m ON t.map = m.name
             """)
-            con.execute("DROP TABLE temp_raw_samples")
+            samples_duration = time.time() - samples_start
+
+            unregister_start = time.time()
+            con.unregister('raw_samples_df')
+            unregister_duration = time.time() - unregister_start
+            db_duration = time.time() - db_start
+
+            logging.info(
+                "[DB] write_samples timings: input_rows=%d parsed_rows=%d parse=%.4fs df=%.4fs maps=%.4fs servers=%.4fs samples=%.4fs unregister=%.4fs db=%.4fs total=%.4fs",
+                len(rows),
+                len(prepared_rows),
+                parse_duration,
+                df_duration,
+                maps_duration,
+                servers_duration,
+                samples_duration,
+                unregister_duration,
+                db_duration,
+                time.time() - total_start,
+            )
+            return {
+                'input_rows': len(rows),
+                'parsed_rows': len(prepared_rows),
+                'parse': parse_duration,
+                'df': df_duration,
+                'maps': maps_duration,
+                'servers': servers_duration,
+                'samples': samples_duration,
+                'unregister': unregister_duration,
+                'db': db_duration,
+                'total': time.time() - total_start,
+            }
 
     except Exception as e:
         logging.error(f"Failed to write to DuckDB: {e}")
-    
-    # Sync replica after writing new samples so frontend sees them immediately
-    update_replica_db()
+    return None
 
 def get_data_freshness():
     with g_served_lock:
@@ -483,29 +550,12 @@ def _update_served_cache_from_db():
                 row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
                 latest = row[0] if row else None
                 if latest:
-                    if isinstance(latest, str):
-                        try:
-                            latest_dt = datetime.strptime(latest, ReaderTimeFormat)
-                        except ValueError:
-                            latest_dt = datetime.fromisoformat(latest)
-                    else:
-                        latest_dt = latest
-                    
+                    latest_dt = _parse_datetime(latest)
                     freshness = latest_dt.strftime(ReaderTimeFormat)
                 
                 row = con.execute("SELECT min(timestamp), max(timestamp) FROM snaps").fetchone()
                 if row and row[0] is not None and row[1] is not None:
-                    min_dt, max_dt = row[0], row[1]
-                    if isinstance(min_dt, str):
-                        try:
-                            min_dt = datetime.strptime(min_dt, ReaderTimeFormat)
-                        except ValueError:
-                            min_dt = datetime.fromisoformat(min_dt)
-                    if isinstance(max_dt, str):
-                        try:
-                            max_dt = datetime.strptime(max_dt, ReaderTimeFormat)
-                        except ValueError:
-                            max_dt = datetime.fromisoformat(max_dt)
+                    min_dt, max_dt = _parse_datetime(row[0]), _parse_datetime(row[1])
                     date_range = {'min_date': min_dt.strftime('%Y-%m-%d'), 'max_date': max_dt.strftime('%Y-%m-%d')}
     except Exception as e:
         logging.debug(f"Failed to update served cache: {e}")
@@ -603,11 +653,7 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
             if not max_date_in_data:
                 return {'labels': [], 'datasets': [], 'dailyTotals': [], 'snapshotCounts': [], 'ranking': [], 'shownMapsCount': 0, 'averageDailyPlayerCount': 0}
 
-            if isinstance(max_date_in_data, str):
-                try:
-                    max_date_in_data = datetime.strptime(max_date_in_data, ReaderTimeFormat)
-                except ValueError:
-                    max_date_in_data = datetime.fromisoformat(max_date_in_data)
+            max_date_in_data = _parse_datetime(max_date_in_data)
 
             start_date = pd.to_datetime(start_date_str) if start_date_str else (pd.Timestamp(max_date_in_data) - pd.Timedelta(days=days_to_show))
 
@@ -625,12 +671,10 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
             query_params = [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
 
             # 1. Map Name Filter
-            if only_maps_containing:
-                safe_tokens = [re.escape(s)[:50] for s in only_maps_containing if isinstance(s, str) and s]
-                if safe_tokens:
-                    pattern = '(?i)' + '|'.join(safe_tokens)
-                    where_clauses.append("REGEXP_MATCHES(m.name, ?)")
-                    query_params.append(pattern)
+            pattern = _regex_filter_pattern(only_maps_containing)
+            if pattern:
+                where_clauses.append("REGEXP_MATCHES(m.name, ?)")
+                query_params.append(pattern)
 
             # 2. Server Filter (IP:Port)
             if server_filter and isinstance(server_filter, str) and server_filter.upper() != 'ALL':
@@ -645,19 +689,16 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
                     pass
 
             # 3. Server Name Filter
-            if only_servers_containing:
-                safe_tokens = [re.escape(s)[:50] for s in only_servers_containing if isinstance(s, str) and s]
-                if safe_tokens:
-                    pattern = '(?i)' + '|'.join(safe_tokens)
-                    # We need to sub-select from server_names or join it
-                    where_clauses.append("""
-                        EXISTS (
-                            SELECT 1 FROM server_names snam 
-                            WHERE snam.ip = s.ip AND snam.port = s.port 
-                            AND REGEXP_MATCHES(snam.name, ?)
-                        )
-                    """)
-                    query_params.append(pattern)
+            pattern = _regex_filter_pattern(only_servers_containing)
+            if pattern:
+                where_clauses.append("""
+                    EXISTS (
+                        SELECT 1 FROM server_names snam 
+                        WHERE snam.ip = s.ip AND snam.port = s.port 
+                        AND REGEXP_MATCHES(snam.name, ?)
+                    )
+                """)
+                query_params.append(pattern)
 
             where_str = " AND ".join(where_clauses)
 
@@ -778,16 +819,14 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
         })
 
     appended_map_names = []
-    if append_maps_containing:
+    pattern = _regex_filter_pattern(append_maps_containing)
+    if pattern:
         try:
-            safe_tokens = [re.escape(s)[:50] for s in append_maps_containing if isinstance(s, str) and s]
-            if safe_tokens:
-                pattern = '(?i)' + '|'.join(safe_tokens)
-                matched = merged_df[merged_df['map'].str.contains(pattern, na=False, regex=True)]['map'].unique().tolist()
-                appended_map_names = [m for m in matched if m not in set(top_maps)]
-                if appended_map_names:
-                    avg_map = merged_df.groupby('map')['avg_players'].sum()
-                    appended_map_names.sort(key=lambda m: float(avg_map.get(m, 0)), reverse=True)
+            matched = merged_df[merged_df['map'].str.contains(pattern, na=False, regex=True)]['map'].unique().tolist()
+            appended_map_names = [m for m in matched if m not in set(top_maps)]
+            if appended_map_names:
+                avg_map = merged_df.groupby('map')['avg_players'].sum()
+                appended_map_names.sort(key=lambda m: float(avg_map.get(m, 0)), reverse=True)
         except re.error:
             pass
 
