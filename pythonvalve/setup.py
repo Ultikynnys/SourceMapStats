@@ -19,8 +19,8 @@ def install_requires():
     requirements = [
         "docopt>=0.6.2",
         "monotonic",
-        "requests>=2.0",
-        "six>=1.6",
+        "requests>=2.34.2",
+        "six>=1.17.0",
     ]
     if sys.version_info[0] == 2:
         requirements.append("enum34>=1.1")
@@ -44,8 +44,8 @@ setuptools.setup(
             "pylint",
         ],
         "test": [
-            "mock==1.0.1",
-            "pytest>=3.6.0",
+            "mock>=5.2.0",
+            "pytest>=8.4.2",
             "pytest-cov",
             "pytest-timeout",
         ],
