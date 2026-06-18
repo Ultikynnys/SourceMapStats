@@ -126,6 +126,16 @@ def init_db(db_path=DB_FILE):
                 SELECT snapshot_id, server_id, map_id, players FROM samples_v3
             """)
 
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS sample_rollups_2h (
+                    bucket TIMESTAMP,
+                    server_id INTEGER,
+                    map_id INTEGER,
+                    players BIGINT,
+                    PRIMARY KEY (bucket, server_id, map_id)
+                )
+            """)
+
             # Cooldowns and Names tables remain mostly same
             con.execute("""
                 CREATE TABLE IF NOT EXISTS server_cooldowns (
@@ -199,7 +209,28 @@ def init_db(db_path=DB_FILE):
                     logging.info("Database optimized.")
                 except Exception as e:
                     logging.error(f"Migration failed: {e}")
-            
+
+            try:
+                rollup_count = con.execute("SELECT count(*) FROM sample_rollups_2h").fetchone()[0] or 0
+                sample_count = con.execute("SELECT count(*) FROM samples_all").fetchone()[0] or 0
+                if sample_count > 0 and rollup_count == 0:
+                    logging.info("Backfilling 2-hour sample rollups from existing raw sample data...")
+                    backfill_start = time.time()
+                    con.execute("""
+                        INSERT INTO sample_rollups_2h (bucket, server_id, map_id, players)
+                        SELECT
+                            time_bucket(INTERVAL '2 hours', sn.timestamp) AS bucket,
+                            sa.server_id,
+                            sa.map_id,
+                            SUM(sa.players)::BIGINT AS players
+                        FROM samples_all sa
+                        JOIN snaps sn ON sa.snapshot_id = sn.id
+                        GROUP BY 1, 2, 3
+                    """)
+                    logging.info("Backfilled 2-hour sample rollups in %.2fs", time.time() - backfill_start)
+            except Exception as e:
+                logging.warning(f"Failed to backfill sample rollups: {e}")
+             
     except Exception as e:
         logging.error(f"Failed to initialize DuckDB: {e}")
     
@@ -235,7 +266,7 @@ def rebuild_database():
             logging.info("Copying tables...")
             
             # Copy Table Data
-            tables_to_copy = ['servers', 'maps', 'snaps', 'samples_v2', 'samples_v3', 'server_cooldowns', 'server_names']
+            tables_to_copy = ['servers', 'maps', 'snaps', 'samples_v2', 'samples_v3', 'sample_rollups_2h', 'server_cooldowns', 'server_names']
             
             for tbl in tables_to_copy:
                 try:
@@ -518,13 +549,43 @@ def write_samples(rows):
                 """)
                 samples_duration = time.time() - samples_start
 
+                rollups_start = time.time()
+                con.execute("""
+                    CREATE TEMPORARY TABLE rollup_delta AS
+                    SELECT
+                        time_bucket(INTERVAL '2 hours', sn.timestamp) AS bucket,
+                        s.id AS server_id,
+                        m.id AS map_id,
+                        SUM(t.players)::BIGINT AS players
+                    FROM raw_samples_df t
+                    JOIN snaps sn ON t.guid = sn.guid
+                    JOIN servers s ON t.ip = s.ip AND t.port = s.port
+                    JOIN maps m ON t.map = m.name
+                    GROUP BY 1, 2, 3
+                """)
+                con.execute("""
+                    INSERT OR REPLACE INTO sample_rollups_2h (bucket, server_id, map_id, players)
+                    SELECT
+                        d.bucket,
+                        d.server_id,
+                        d.map_id,
+                        d.players + COALESCE(r.players, 0)
+                    FROM rollup_delta d
+                    LEFT JOIN sample_rollups_2h r
+                        ON r.bucket = d.bucket
+                        AND r.server_id = d.server_id
+                        AND r.map_id = d.map_id
+                """)
+                con.execute("DROP TABLE rollup_delta")
+                rollups_duration = time.time() - rollups_start
+
                 unregister_start = time.time()
                 con.unregister('raw_samples_df')
                 unregister_duration = time.time() - unregister_start
                 db_duration = time.time() - db_start
 
                 logging.info(
-                    "[DB] write_samples timings: input_rows=%d parsed_rows=%d parse=%.4fs df=%.4fs maps=%.4fs servers=%.4fs samples=%.4fs unregister=%.4fs db=%.4fs total=%.4fs",
+                    "[DB] write_samples timings: input_rows=%d parsed_rows=%d parse=%.4fs df=%.4fs maps=%.4fs servers=%.4fs samples=%.4fs rollups=%.4fs unregister=%.4fs db=%.4fs total=%.4fs",
                     len(rows),
                     len(prepared_rows),
                     parse_duration,
@@ -532,6 +593,7 @@ def write_samples(rows):
                     maps_duration,
                     servers_duration,
                     samples_duration,
+                    rollups_duration,
                     unregister_duration,
                     db_duration,
                     time.time() - total_start,
@@ -544,6 +606,7 @@ def write_samples(rows):
                     'maps': maps_duration,
                     'servers': servers_duration,
                     'samples': samples_duration,
+                    'rollups': rollups_duration,
                     'unregister': unregister_duration,
                     'db': db_duration,
                     'total': time.time() - total_start,
@@ -686,10 +749,18 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
             
             # Bucketing interval
             interval = '2 hours'
+            window_start = pd.Timestamp(start_date).to_pydatetime()
+            window_end = pd.Timestamp(end_date).to_pydatetime()
+            use_rollups = con.execute(
+                "SELECT EXISTS(SELECT 1 FROM sample_rollups_2h WHERE bucket >= ? AND bucket < ?)",
+                [window_start, window_end]
+            ).fetchone()[0]
+            if use_rollups:
+                logging.info("[Chart] Using 2h rollup table for aggregation")
 
             # Build Filter Clauses for SQL
-            where_clauses = ["sn.timestamp >= ? AND sn.timestamp < ?"]
-            query_params = [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
+            where_clauses = ["r.bucket >= ? AND r.bucket < ?"] if use_rollups else ["sn.timestamp >= ? AND sn.timestamp < ?"]
+            query_params = [window_start, window_end]
 
             # 1. Map Name Filter
             pattern = _regex_filter_pattern(only_maps_containing)
@@ -735,63 +806,110 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
                 GROUP BY 1
                 ORDER BY 1
                 """,
-                [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
+                [window_start, window_end]
             ).df()
             daily_total_snapshots_df['date'] = pd.to_datetime(daily_total_snapshots_df['date'])
 
             # --- FETCH 2: Aggregated Player Sum per Map per Bucket (Filtered) ---
-            df_agg = con.execute(
-                f"""
-                SELECT 
-                    time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
-                    m.name as map,
-                    SUM(sa.players) as players
-                FROM samples_all sa
-                JOIN snaps sn ON sa.snapshot_id = sn.id
-                JOIN servers s ON sa.server_id = s.id
-                JOIN maps m ON sa.map_id = m.id
-                WHERE {where_str}
-                GROUP BY 1, 2
-                """,
-                query_params
-            ).df()
+            if use_rollups:
+                df_agg = con.execute(
+                    f"""
+                    SELECT 
+                        r.bucket as date,
+                        m.name as map,
+                        SUM(r.players) as players
+                    FROM sample_rollups_2h r
+                    JOIN servers s ON r.server_id = s.id
+                    JOIN maps m ON r.map_id = m.id
+                    WHERE {where_str}
+                    GROUP BY 1, 2
+                    """,
+                    query_params
+                ).df()
+            else:
+                df_agg = con.execute(
+                    f"""
+                    SELECT 
+                        time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
+                        m.name as map,
+                        SUM(sa.players) as players
+                    FROM samples_all sa
+                    JOIN snaps sn ON sa.snapshot_id = sn.id
+                    JOIN servers s ON sa.server_id = s.id
+                    JOIN maps m ON sa.map_id = m.id
+                    WHERE {where_str}
+                    GROUP BY 1, 2
+                    """,
+                    query_params
+                ).df()
             df_agg['date'] = pd.to_datetime(df_agg['date'])
 
             # --- FETCH 3: Aggregated Player Sum per Server per Bucket (Filtered) ---
             # Used for the "Top Servers" chart for the current view
-            df_server_agg = con.execute(
-                f"""
-                SELECT 
-                    time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
-                    s.ip, s.port,
-                    SUM(sa.players) as players
-                FROM samples_all sa
-                JOIN snaps sn ON sa.snapshot_id = sn.id
-                JOIN servers s ON sa.server_id = s.id
-                JOIN maps m ON sa.map_id = m.id
-                WHERE {where_str}
-                GROUP BY 1, 2, 3
-                """,
-                query_params
-            ).df()
+            if use_rollups:
+                df_server_agg = con.execute(
+                    f"""
+                    SELECT 
+                        r.bucket as date,
+                        s.ip, s.port,
+                        SUM(r.players) as players
+                    FROM sample_rollups_2h r
+                    JOIN servers s ON r.server_id = s.id
+                    JOIN maps m ON r.map_id = m.id
+                    WHERE {where_str}
+                    GROUP BY 1, 2, 3
+                    """,
+                    query_params
+                ).df()
+            else:
+                df_server_agg = con.execute(
+                    f"""
+                    SELECT 
+                        time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
+                        s.ip, s.port,
+                        SUM(sa.players) as players
+                    FROM samples_all sa
+                    JOIN snaps sn ON sa.snapshot_id = sn.id
+                    JOIN servers s ON sa.server_id = s.id
+                    JOIN maps m ON sa.map_id = m.id
+                    WHERE {where_str}
+                    GROUP BY 1, 2, 3
+                    """,
+                    query_params
+                ).df()
             df_server_agg['date'] = pd.to_datetime(df_server_agg['date'])
 
             # --- FETCH 4: Global server stats (Unfiltered window) ---
             # Used for the "Global Server Ranking" table
-            df_global_server_agg = con.execute(
-                f"""
-                SELECT 
-                    time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
-                    s.ip, s.port,
-                    SUM(sa.players) as players
-                FROM samples_all sa
-                JOIN snaps sn ON sa.snapshot_id = sn.id
-                JOIN servers s ON sa.server_id = s.id
-                WHERE sn.timestamp >= ? AND sn.timestamp < ?
-                GROUP BY 1, 2, 3
-                """,
-                [pd.Timestamp(start_date).to_pydatetime(), pd.Timestamp(end_date).to_pydatetime()]
-            ).df()
+            if use_rollups:
+                df_global_server_agg = con.execute(
+                    """
+                    SELECT 
+                        r.bucket as date,
+                        s.ip, s.port,
+                        SUM(r.players) as players
+                    FROM sample_rollups_2h r
+                    JOIN servers s ON r.server_id = s.id
+                    WHERE r.bucket >= ? AND r.bucket < ?
+                    GROUP BY 1, 2, 3
+                    """,
+                    [window_start, window_end]
+                ).df()
+            else:
+                df_global_server_agg = con.execute(
+                    f"""
+                    SELECT 
+                        time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
+                        s.ip, s.port,
+                        SUM(sa.players) as players
+                    FROM samples_all sa
+                    JOIN snaps sn ON sa.snapshot_id = sn.id
+                    JOIN servers s ON sa.server_id = s.id
+                    WHERE sn.timestamp >= ? AND sn.timestamp < ?
+                    GROUP BY 1, 2, 3
+                    """,
+                    [window_start, window_end]
+                ).df()
             df_global_server_agg['date'] = pd.to_datetime(df_global_server_agg['date'])
 
             # Helper to fetch server names for labeling
