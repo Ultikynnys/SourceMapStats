@@ -110,6 +110,22 @@ def init_db(db_path=DB_FILE):
                 )
             """)
 
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS samples_v3 (
+                    snapshot_id INTEGER,
+                    server_id INTEGER,
+                    map_id INTEGER,
+                    players INTEGER
+                )
+            """)
+
+            con.execute("""
+                CREATE OR REPLACE VIEW samples_all AS
+                SELECT snapshot_id, server_id, map_id, players FROM samples_v2
+                UNION ALL
+                SELECT snapshot_id, server_id, map_id, players FROM samples_v3
+            """)
+
             # Cooldowns and Names tables remain mostly same
             con.execute("""
                 CREATE TABLE IF NOT EXISTS server_cooldowns (
@@ -219,7 +235,7 @@ def rebuild_database():
             logging.info("Copying tables...")
             
             # Copy Table Data
-            tables_to_copy = ['servers', 'maps', 'snaps', 'samples_v2', 'server_cooldowns', 'server_names']
+            tables_to_copy = ['servers', 'maps', 'snaps', 'samples_v2', 'samples_v3', 'server_cooldowns', 'server_names']
             
             for tbl in tables_to_copy:
                 try:
@@ -342,36 +358,35 @@ def save_cooldowns_to_db(cooldowns):
     if not cooldowns:
         return
     try:
-        with duckdb.connect(DB_FILE) as con:
-            now = datetime.now()
-            # Convert dict to list of dicts for DataFrame creation
-            data = [
-                {
-                    'ip': ip,
-                    'port': port,
-                    'timeout': d['timeout'],
-                    'failures': d['failures'],
-                    'skip_until': d['skip_until'],
-                    'updated_at': now
-                }
-                for (ip, port), d in cooldowns.items()
-            ]
-            
-            if not data:
-                return
-
-            df = pd.DataFrame(data)
-            
-            # Bulk insert using DuckDB's direct DataFrame integration
-            con.execute(
-                """
-                INSERT OR REPLACE INTO server_cooldowns 
-                SELECT * FROM df
-                """
-            )
-            
+        with g_replica_lock:
+            with duckdb.connect(DB_FILE) as con:
+                _save_cooldowns_to_db_locked(con, cooldowns)
     except Exception as e:
         logging.debug(f"Could not save cooldowns to DB: {e}")
+
+def _save_cooldowns_to_db_locked(con, cooldowns):
+    now = datetime.now()
+    data = [
+        {
+            'ip': ip,
+            'port': port,
+            'timeout': d['timeout'],
+            'failures': d['failures'],
+            'skip_until': d['skip_until'],
+            'updated_at': now
+        }
+        for (ip, port), d in cooldowns.items()
+    ]
+    if not data:
+        return
+
+    df = pd.DataFrame(data)
+    con.execute(
+        """
+        INSERT OR REPLACE INTO server_cooldowns 
+        SELECT * FROM df
+        """
+    )
 
 def save_server_names_to_db(rows):
     if not rows:
@@ -399,31 +414,36 @@ def save_server_names_to_db(rows):
         return
 
     try:
-        with duckdb.connect(DB_FILE) as con:
-            df = pd.DataFrame(server_updates)
-            
-            # Bulk insert using DuckDB's direct DataFrame integration
-            con.execute(
-                """
-                INSERT OR REPLACE INTO server_names 
-                SELECT * FROM df
-                """
-            )
-            logging.info(f"Updated names for {len(server_updates)} servers.")
+        with g_replica_lock:
+            with duckdb.connect(DB_FILE) as con:
+                _save_server_names_to_db_locked(con, server_updates)
     except Exception as e:
         logging.error(f"Failed to update server names in DuckDB: {e}")
 
+def _save_server_names_to_db_locked(con, server_updates):
+    df = pd.DataFrame(server_updates)
+    con.execute(
+        """
+        INSERT OR REPLACE INTO server_names 
+        SELECT * FROM df
+        """
+    )
+    logging.info(f"Updated names for {len(server_updates)} servers.")
+
 def record_snapshot(snapshot_id, snapshot_dt_str):
     try:
-        with duckdb.connect(DB_FILE) as con:
-            ts = _parse_datetime(snapshot_dt_str)
-            
-            con.execute(
-                "INSERT OR IGNORE INTO snaps (guid, timestamp) VALUES (?, ?)",
-                [snapshot_id, ts]
-            )
+        with g_replica_lock:
+            with duckdb.connect(DB_FILE) as con:
+                _record_snapshot_locked(con, snapshot_id, snapshot_dt_str)
     except Exception as e:
         logging.error(f"Failed to record snapshot: {e}")
+
+def _record_snapshot_locked(con, snapshot_id, snapshot_dt_str):
+    ts = _parse_datetime(snapshot_dt_str)
+    con.execute(
+        "INSERT OR IGNORE INTO snaps (guid, timestamp) VALUES (?, ?)",
+        [snapshot_id, ts]
+    )
 
 def write_samples(rows):
     if not rows:
@@ -461,72 +481,73 @@ def write_samples(rows):
         }
 
     try:
-        with duckdb.connect(DB_FILE) as con:
-            db_start = time.time()
+        with g_replica_lock:
+            with duckdb.connect(DB_FILE) as con:
+                db_start = time.time()
 
-            df_start = time.time()
-            df = pd.DataFrame(
-                prepared_rows,
-                columns=['ip', 'port', 'map', 'players', 'timestamp', 'country_code', 'guid']
-            )
-            con.register('raw_samples_df', df)
-            df_duration = time.time() - df_start
+                df_start = time.time()
+                df = pd.DataFrame(
+                    prepared_rows,
+                    columns=['ip', 'port', 'map', 'players', 'timestamp', 'country_code', 'guid']
+                )
+                con.register('raw_samples_df', df)
+                df_duration = time.time() - df_start
 
-            maps_start = time.time()
-            con.execute("INSERT OR IGNORE INTO maps (name) SELECT DISTINCT map FROM raw_samples_df")
-            maps_duration = time.time() - maps_start
+                maps_start = time.time()
+                con.execute("INSERT OR IGNORE INTO maps (name) SELECT DISTINCT map FROM raw_samples_df")
+                maps_duration = time.time() - maps_start
 
-            servers_start = time.time()
-            con.execute("""
-                INSERT OR IGNORE INTO servers (ip, port, country_code)
-                SELECT ip, port, max(country_code)
-                FROM raw_samples_df
-                GROUP BY ip, port
-            """)
-            servers_duration = time.time() - servers_start
+                servers_start = time.time()
+                con.execute("""
+                    INSERT OR IGNORE INTO servers (ip, port, country_code)
+                    SELECT ip, port, max(country_code)
+                    FROM raw_samples_df
+                    GROUP BY ip, port
+                """)
+                servers_duration = time.time() - servers_start
 
-            samples_start = time.time()
-            con.execute("""
-                INSERT INTO samples_v2 (snapshot_id, server_id, map_id, players)
-                SELECT 
-                    sn.id, s.id, m.id, t.players
-                FROM raw_samples_df t
-                JOIN snaps sn ON t.guid = sn.guid
-                JOIN servers s ON t.ip = s.ip AND t.port = s.port
-                JOIN maps m ON t.map = m.name
-            """)
-            samples_duration = time.time() - samples_start
+                samples_start = time.time()
+                con.execute("""
+                    INSERT INTO samples_v3 (snapshot_id, server_id, map_id, players)
+                    SELECT 
+                        sn.id, s.id, m.id, t.players
+                    FROM raw_samples_df t
+                    JOIN snaps sn ON t.guid = sn.guid
+                    JOIN servers s ON t.ip = s.ip AND t.port = s.port
+                    JOIN maps m ON t.map = m.name
+                """)
+                samples_duration = time.time() - samples_start
 
-            unregister_start = time.time()
-            con.unregister('raw_samples_df')
-            unregister_duration = time.time() - unregister_start
-            db_duration = time.time() - db_start
+                unregister_start = time.time()
+                con.unregister('raw_samples_df')
+                unregister_duration = time.time() - unregister_start
+                db_duration = time.time() - db_start
 
-            logging.info(
-                "[DB] write_samples timings: input_rows=%d parsed_rows=%d parse=%.4fs df=%.4fs maps=%.4fs servers=%.4fs samples=%.4fs unregister=%.4fs db=%.4fs total=%.4fs",
-                len(rows),
-                len(prepared_rows),
-                parse_duration,
-                df_duration,
-                maps_duration,
-                servers_duration,
-                samples_duration,
-                unregister_duration,
-                db_duration,
-                time.time() - total_start,
-            )
-            return {
-                'input_rows': len(rows),
-                'parsed_rows': len(prepared_rows),
-                'parse': parse_duration,
-                'df': df_duration,
-                'maps': maps_duration,
-                'servers': servers_duration,
-                'samples': samples_duration,
-                'unregister': unregister_duration,
-                'db': db_duration,
-                'total': time.time() - total_start,
-            }
+                logging.info(
+                    "[DB] write_samples timings: input_rows=%d parsed_rows=%d parse=%.4fs df=%.4fs maps=%.4fs servers=%.4fs samples=%.4fs unregister=%.4fs db=%.4fs total=%.4fs",
+                    len(rows),
+                    len(prepared_rows),
+                    parse_duration,
+                    df_duration,
+                    maps_duration,
+                    servers_duration,
+                    samples_duration,
+                    unregister_duration,
+                    db_duration,
+                    time.time() - total_start,
+                )
+                return {
+                    'input_rows': len(rows),
+                    'parsed_rows': len(prepared_rows),
+                    'parse': parse_duration,
+                    'df': df_duration,
+                    'maps': maps_duration,
+                    'servers': servers_duration,
+                    'samples': samples_duration,
+                    'unregister': unregister_duration,
+                    'db': db_duration,
+                    'total': time.time() - total_start,
+                }
 
     except Exception as e:
         logging.error(f"Failed to write to DuckDB: {e}")
@@ -546,7 +567,7 @@ def _update_served_cache_from_db():
     
     try:
         with g_replica_lock:
-            with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con:
+            with duckdb.connect(DB_FILE, read_only=True) as con:
                 row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
                 latest = row[0] if row else None
                 if latest:
@@ -646,8 +667,8 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
     _step_time = _start_time
 
     try:
-        logging.debug("[Chart] Connecting to database (Replica)...")
-        with duckdb.connect(DB_REPLICA_FILE, read_only=True) as con:
+        logging.debug("[Chart] Connecting to database...")
+        with duckdb.connect(DB_FILE, read_only=True) as con:
             row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
             max_date_in_data = row[0] if row else None
             if not max_date_in_data:
@@ -725,7 +746,7 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
                     time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
                     m.name as map,
                     SUM(sa.players) as players
-                FROM samples_v2 sa
+                FROM samples_all sa
                 JOIN snaps sn ON sa.snapshot_id = sn.id
                 JOIN servers s ON sa.server_id = s.id
                 JOIN maps m ON sa.map_id = m.id
@@ -744,7 +765,7 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
                     time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
                     s.ip, s.port,
                     SUM(sa.players) as players
-                FROM samples_v2 sa
+                FROM samples_all sa
                 JOIN snaps sn ON sa.snapshot_id = sn.id
                 JOIN servers s ON sa.server_id = s.id
                 JOIN maps m ON sa.map_id = m.id
@@ -763,7 +784,7 @@ def _get_chart_data_worker_impl(start_date_str, days_to_show, only_maps_containi
                     time_bucket(INTERVAL '{interval}', sn.timestamp) as date,
                     s.ip, s.port,
                     SUM(sa.players) as players
-                FROM samples_v2 sa
+                FROM samples_all sa
                 JOIN snaps sn ON sa.snapshot_id = sn.id
                 JOIN servers s ON sa.server_id = s.id
                 WHERE sn.timestamp >= ? AND sn.timestamp < ?
@@ -1000,7 +1021,7 @@ def get_recent_ips(days=7):
             rows = con.execute(
                 """
                 SELECT DISTINCT s.ip, s.port 
-                FROM samples_v2 sa
+                FROM samples_all sa
                 JOIN snaps sn ON sa.snapshot_id = sn.id
                 JOIN servers s ON sa.server_id = s.id
                 WHERE sn.timestamp >= ?
