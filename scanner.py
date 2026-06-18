@@ -193,7 +193,7 @@ def scan_loop():
         write_profile = write_samples(results)
         timings['write_samples'] = time.time() - t_start
         if write_profile:
-            for key in ('parse', 'df', 'maps', 'servers', 'samples', 'unregister', 'db'):
+            for key in ('parse', 'df', 'maps', 'servers', 'samples', 'rollups', 'unregister', 'db'):
                 if key in write_profile:
                     timings[f'write_samples.{key}'] = write_profile[key]
             timings['write_samples.input_rows'] = write_profile.get('input_rows', len(results))
