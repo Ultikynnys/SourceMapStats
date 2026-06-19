@@ -15,8 +15,7 @@ from database import (
     refresh_served_cache,
     record_snapshot,
     ReaderTimeFormat,
-    get_recent_ips,
-    rebuild_database
+    get_recent_ips
 )
 from steam_api import get_server_list
 from utils import is_valid_public_ip, sanitize_server_name
@@ -134,12 +133,9 @@ def scan_loop():
     logging.info("Initializing served cache from existing data...")
     refresh_served_cache()
     
-    logging.info("Running initial database rebuild/compaction...")
-    rebuild_database()
     last_replica_update_time = time.time()
 
     cycles_count = 0
-    last_rebuild_date = datetime.now().date()  # Track last rebuild date
     
     while True:
         cycle_start_time = time.time()
@@ -220,15 +216,6 @@ def scan_loop():
             timings['update_replica.lock_wait'] = replica_profile['lock_wait']
             timings['update_replica.size_mb'] = replica_profile['size_mb']
         
-        # Daily database rebuild/compaction (runs once per day when date changes)
-        current_date = datetime.now().date()
-        if current_date != last_rebuild_date:
-            logging.info(f"New day detected ({last_rebuild_date} -> {current_date}). Running daily database compaction...")
-            t_rebuild = time.time()
-            rebuild_database()
-            last_rebuild_date = current_date
-            timings['daily_rebuild'] = time.time() - t_rebuild
-
         t_start = time.time()
         refresh_served_cache()
         timings['refresh_cache'] = time.time() - t_start
