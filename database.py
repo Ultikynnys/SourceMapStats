@@ -47,7 +47,7 @@ g_served_data = {
     'default_chart_data': None,  
 }
 g_served_lock = threading.RLock() 
-g_replica_lock = threading.Lock() 
+g_replica_lock = threading.RLock() 
 
 DEFAULT_CHART_PARAMS = {
     'days_to_show': 7,
@@ -254,58 +254,54 @@ def rebuild_database():
             return
 
     logging.info("Rebuilding database to reclaim space...")
-    
+
     try:
-        # Initialize schema in new DB using the common init function
-        init_db(NEW_DB)
-        
-        with duckdb.connect(NEW_DB) as con_new:
-            # Attach old DB to read from it
-            con_new.execute(f"ATTACH '{DB_FILE}' AS old_db")
-            
-            logging.info("Copying tables...")
-            
-            # Copy Table Data
-            tables_to_copy = ['servers', 'maps', 'snaps', 'samples_v2', 'samples_v3', 'sample_rollups_2h', 'server_cooldowns', 'server_names']
-            
-            for tbl in tables_to_copy:
-                try:
-                    con_new.execute(f"INSERT INTO {tbl} SELECT * FROM old_db.{tbl}")
-                except Exception as e:
-                    logging.warning(f"Could not copy table {tbl}: {e}")
-            
-            con_new.execute("DETACH old_db")
-            
-            # Reset sequences to match max id (DuckDB doesn't always have setval, so we recreate)
-            max_server_id = con_new.execute("SELECT max(id) FROM servers").fetchone()[0] or 0
-            con_new.execute(f"DROP SEQUENCE IF EXISTS seq_servers")
-            con_new.execute(f"CREATE SEQUENCE seq_servers START {max_server_id + 1}")
+        with g_replica_lock:
+            # Initialize schema in new DB using the common init function
+            init_db(NEW_DB)
 
-            max_map_id = con_new.execute("SELECT max(id) FROM maps").fetchone()[0] or 0
-            con_new.execute(f"DROP SEQUENCE IF EXISTS seq_maps")
-            con_new.execute(f"CREATE SEQUENCE seq_maps START {max_map_id + 1}")
+            with duckdb.connect(NEW_DB) as con_new:
+                # Attach old DB to read from it. This must be serialized with chart reads.
+                con_new.execute(f"ATTACH '{DB_FILE}' AS old_db")
 
-            max_snap_id = con_new.execute("SELECT max(id) FROM snaps").fetchone()[0] or 0
-            con_new.execute(f"DROP SEQUENCE IF EXISTS seq_snapshots")
-            con_new.execute(f"CREATE SEQUENCE seq_snapshots START {max_snap_id + 1}")
-            
-        # Swap files
-        # We need to ensure no other connections are open. The scanner is single threaded mostly,
-        # but the chart worker might be reading replica (good thing it reads replica).
-        # We should rename old to backup, new to live.
-        
-        BACKUP_DB = DB_FILE + ".bak"
-        if os.path.exists(BACKUP_DB):
-            os.remove(BACKUP_DB)
-            
-        os.rename(DB_FILE, BACKUP_DB)
-        os.rename(NEW_DB, DB_FILE)
-        
-        logging.info(f"Database rebuild complete. Old size: {os.path.getsize(BACKUP_DB) / 1024 / 1024:.2f}MB, New size: {os.path.getsize(DB_FILE) / 1024 / 1024:.2f}MB")
-        
-        # Sync replica immediately
-        update_replica_db()
-        
+                logging.info("Copying tables...")
+
+                # Copy Table Data
+                tables_to_copy = ['servers', 'maps', 'snaps', 'samples_v2', 'samples_v3', 'sample_rollups_2h', 'server_cooldowns', 'server_names']
+
+                for tbl in tables_to_copy:
+                    try:
+                        con_new.execute(f"INSERT INTO {tbl} SELECT * FROM old_db.{tbl}")
+                    except Exception as e:
+                        logging.warning(f"Could not copy table {tbl}: {e}")
+
+                con_new.execute("DETACH old_db")
+
+                # Reset sequences to match max id (DuckDB doesn't always have setval, so we recreate)
+                max_server_id = con_new.execute("SELECT max(id) FROM servers").fetchone()[0] or 0
+                con_new.execute(f"DROP SEQUENCE IF EXISTS seq_servers")
+                con_new.execute(f"CREATE SEQUENCE seq_servers START {max_server_id + 1}")
+
+                max_map_id = con_new.execute("SELECT max(id) FROM maps").fetchone()[0] or 0
+                con_new.execute(f"DROP SEQUENCE IF EXISTS seq_maps")
+                con_new.execute(f"CREATE SEQUENCE seq_maps START {max_map_id + 1}")
+
+                max_snap_id = con_new.execute("SELECT max(id) FROM snaps").fetchone()[0] or 0
+                con_new.execute(f"DROP SEQUENCE IF EXISTS seq_snapshots")
+                con_new.execute(f"CREATE SEQUENCE seq_snapshots START {max_snap_id + 1}")
+
+            BACKUP_DB = DB_FILE + ".bak"
+            if os.path.exists(BACKUP_DB):
+                os.remove(BACKUP_DB)
+
+            os.rename(DB_FILE, BACKUP_DB)
+            os.rename(NEW_DB, DB_FILE)
+
+            logging.info(f"Database rebuild complete. Old size: {os.path.getsize(BACKUP_DB) / 1024 / 1024:.2f}MB, New size: {os.path.getsize(DB_FILE) / 1024 / 1024:.2f}MB")
+
+            # Sync replica immediately
+            update_replica_db()
+
     except Exception as e:
         logging.error(f"Rebuild failed: {e}")
         # Cleanup
@@ -317,9 +313,10 @@ def maintenance():
     """Run VACUUM and CHECKPOINT to reclaim disk space."""
     try:
         logging.info("Starting database maintenance (VACUUM)...")
-        with duckdb.connect(DB_FILE) as con:
-            con.execute("CHECKPOINT")
-            con.execute("VACUUM")
+        with g_replica_lock:
+            with duckdb.connect(DB_FILE) as con:
+                con.execute("CHECKPOINT")
+                con.execute("VACUUM")
         logging.info("Database maintenance complete.")
         update_replica_db()
     except Exception as e:
