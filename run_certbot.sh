@@ -41,13 +41,20 @@ ln -sf /etc/nginx/sites-available/sourcemapstats /etc/nginx/sites-enabled/
 mkdir -p "$WEBROOT"
 chown -R www-data:www-data "$WEBROOT"
 
+# Install certbot deploy hook so nginx reloads after every automatic renewal
+if [ -f certbot_deploy_hook.sh ]; then
+    install -D -m 0755 certbot_deploy_hook.sh /etc/letsencrypt/renewal-hooks/deploy/00-reload-nginx.sh
+else
+    echo "WARNING: certbot_deploy_hook.sh not found; nginx will not auto-reload after renewal."
+fi
+
 # Check if certificates already exist
 if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
-    echo "Certificates found for $DOMAIN. refreshing..."
+    echo "Certificates found for $DOMAIN. Refreshing via certbot renew..."
     # Ensure SSL is enabled in config
     uncomment_ssl
     systemctl reload nginx
-    certbot certonly --webroot -w "$WEBROOT" -d "$DOMAIN" -m "$CERTBOT_EMAIL" --agree-tos --no-eff-email --force-renewal
+    certbot renew --cert-name "$DOMAIN"
 else
     echo "No certificates found. Bootstrapping..."
     # Bootstrap: Disable SSL -> Start Nginx -> Get Cert -> Enable SSL

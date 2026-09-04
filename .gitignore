@@ -21,3 +21,7 @@ config_keys.json
 .env
 *.wal
 *.filepart
+
+# local venv and logs (lowercase / actual names)
+venv/
+sourcemapstats.log*
