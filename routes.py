@@ -177,13 +177,4 @@ def admin_unblock_ip():
         "message": f"IP {ip} has been unblocked" if success else f"IP {ip} was not blocked"
     })
 
-@bp.route("/debug-whoami")
-def debug_whoami():
-    """Debug endpoint to see what Flask sees about the request."""
-    return jsonify({
-        "remote_addr": request.remote_addr,
-        "access_route": list(request.access_route),
-        "headers": dict(request.headers),
-        "environ_remote_addr": request.environ.get('REMOTE_ADDR'),
-        "x_forwarded_for": request.headers.get('X-Forwarded-For')
-    })
+# /debug-whoami removed — it leaked client IP/headers without authentication.

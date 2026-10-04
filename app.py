@@ -54,7 +54,7 @@ import scanner
 import routes
 
 # ─── basic constants ──────────────────────────────────────────────────────────
-PUBLIC_MODE = True  # False → bind 127.0.0.1
+PUBLIC_MODE = False  # bind 127.0.0.1; exposed only through nginx
 
 # Ensure correct MIME types
 mimetypes.add_type('application/javascript', '.js')
@@ -66,13 +66,16 @@ app = Flask(__name__, static_folder='static')
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 class RealIpMiddleware:
-    """Middleware to force REMOTE_ADDR to use X-Real-IP if present."""
+    """Trust the X-Real-IP header (set by our nginx) ONLY when the immediate
+    peer is loopback, so a direct client can never spoof its source address."""
     def __init__(self, app):
         self.app = app
 
     def __call__(self, environ, start_response):
-        if 'HTTP_X_REAL_IP' in environ:
-            environ['REMOTE_ADDR'] = environ['HTTP_X_REAL_IP']
+        peer = environ.get('REMOTE_ADDR')
+        real_ip = environ.get('HTTP_X_REAL_IP')
+        if peer in ('127.0.0.1', '::1') and real_ip:
+            environ['REMOTE_ADDR'] = real_ip
         return self.app(environ, start_response)
 
 app.wsgi_app = RealIpMiddleware(app.wsgi_app)
