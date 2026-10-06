@@ -197,21 +197,17 @@
     animation: rank-sheen 4.2s ease-in-out infinite;
     pointer-events: none;
   }
-  /* four-point star drawn with two thin bars; JS scatters several of these
-     across the gold row with staggered timings so they twinkle periodically */
+  /* four-point sparkle star, clipped from a soft radial fill; JS scatters
+     several across the gold row with staggered timings so they glint at
+     different moments. Held at ~10% opacity so the label stays readable. */
   .medal-spark {
     position: absolute;
     width: 10px;
     height: 10px;
-    background-image:
-      linear-gradient(#fffdf2, #fffdf2),
-      linear-gradient(#fffdf2, #fffdf2);
-    background-size: 2px 100%, 100% 2px;
-    background-position: center, center;
-    background-repeat: no-repeat;
-    filter: drop-shadow(0 0 4px rgba(255, 223, 120, 0.95));
+    background: radial-gradient(circle at 50% 50%, #fffdf5 0%, #ffeeb5 55%, rgba(255, 238, 181, 0) 100%);
+    clip-path: polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%);
     opacity: 0;
-    transform: scale(0.55);
+    transform: scale(0.6);
     animation-name: rank-twinkle;
     animation-timing-function: ease-in-out;
     animation-iteration-count: infinite;
@@ -222,8 +218,8 @@
     58%, 100% { background-position: -80% 0; }
   }
   @keyframes rank-twinkle {
-    0%, 100% { opacity: 0; transform: scale(0.55) rotate(0deg); }
-    35%, 65% { opacity: 1; transform: scale(1.15) rotate(45deg); }
+    0%, 100% { opacity: 0; transform: scale(0.6) rotate(0deg); }
+    40%, 60% { opacity: 0.1; transform: scale(1.2) rotate(15deg); }
   }
   @media (prefers-reduced-motion: reduce) {
     .ranking-section li.rank-1::before {
