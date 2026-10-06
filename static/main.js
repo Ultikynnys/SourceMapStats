@@ -1,6 +1,7 @@
-/* All chart text (titles, legends, ticks, tooltips) uses the site font */
+/* All chart text (titles, legends, ticks, tooltips) uses the body font.
+   TF2 Build smears at these small sizes, so charts use TF2 Secondary. */
 if (window.Chart) {
-  Chart.defaults.font.family = "'TF2 Build', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+  Chart.defaults.font.family = "'TF2 Secondary', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
 }
 
 /* Helper utilities */

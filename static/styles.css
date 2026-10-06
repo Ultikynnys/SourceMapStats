@@ -6,6 +6,14 @@
   font-display: swap;
 }
 
+/* Body/UI font. TF2 Secondary is the game's body face: mixed case and much
+   easier to read at small sizes than the blocky TF2 Build heading font. */
+@font-face {
+  font-family: 'TF2 Secondary';
+  src: url('/static/fonts/TF2Secondary.ttf') format('truetype');
+  font-display: swap;
+}
+
 #dataFreshness {
     position: fixed;
     top: 10px;
@@ -22,11 +30,16 @@
    GLOBAL
    ===================================================== */
    body {
-    font-family: 'TF2 Build', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'TF2 Secondary', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: #121212;
     margin: 0;
     padding: 0;
     color: #e0e0e0;
+  }
+
+  /* Headings keep the blocky TF2 Build face, as in the game's HUD */
+  h1, h2 {
+    font-family: 'TF2 Build', 'TF2 Secondary', sans-serif;
   }
   
   /* form controls do not inherit the page font by default */
@@ -243,10 +256,15 @@
     color: #fff;
     cursor: pointer;
     font-size: 16px;
+    font-family: 'TF2 Build', 'TF2 Secondary', sans-serif;
     transition: background-color .3s ease;
   }
   .btn:hover {
     background-color: #d35400;
+  }
+  /* action buttons use the heading face too */
+  .cancel-btn {
+    font-family: 'TF2 Build', 'TF2 Secondary', sans-serif;
   }
   
   /* =====================================================
