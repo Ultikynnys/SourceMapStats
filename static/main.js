@@ -456,6 +456,33 @@ function renderChart(data) {
   });
 }
 
+/* Split the series so measured stretches and interpolated ones can be drawn
+   (and filled) in different colours. Each interpolated run repeats the
+   neighbouring measured points so the two lines stay visually joined. */
+function splitMonthlySeries(points) {
+  const measured = [];
+  const interpolatedRuns = [];
+  let run = null;
+  points.forEach((p, i) => {
+    if (!p.interpolated) {
+      measured.push(p);
+      if (run) {
+        run.push(p);
+        interpolatedRuns.push(run);
+        run = null;
+      }
+    } else {
+      if (!run) {
+        run = [];
+        if (i > 0) run.push(points[i - 1]); // anchor to the last measured point
+      }
+      run.push(p);
+    }
+  });
+  if (run) interpolatedRuns.push(run);
+  return { measured, interpolatedRuns };
+}
+
 /* Seasonal chart: average concurrent players per half-month for a calendar year */
 function renderMonthlyChart(data) {
   const canvas = document.getElementById('monthlyChartCanvas');
@@ -484,28 +511,39 @@ function renderMonthlyChart(data) {
   const ctx = canvas.getContext('2d');
   if (window.monthlyChart_instance) window.monthlyChart_instance.destroy();
 
+  const { measured, interpolatedRuns } = splitMonthlySeries(points);
+
+  const measuredDataset = {
+    label: 'Measured',
+    data: measured,
+    borderColor: '#2ecc71',
+    backgroundColor: 'rgba(46, 204, 113, 0.14)',
+    borderWidth: 2,
+    tension: 0.25,
+    fill: true,
+    pointRadius: 3.5,
+    pointBackgroundColor: '#2ecc71',
+    pointBorderColor: '#2ecc71'
+  };
+  // one dataset per interpolated run, so the area under it is tinted red
+  // rather than inheriting the green of the measured series
+  const interpolatedDatasets = interpolatedRuns.map((run) => ({
+    label: 'Interpolated',
+    data: run,
+    borderColor: '#e74c3c',
+    backgroundColor: 'rgba(231, 76, 60, 0.14)',
+    borderWidth: 2,
+    borderDash: [5, 4],
+    tension: 0.25,
+    fill: true,
+    pointRadius: 2.5,
+    pointBackgroundColor: '#e74c3c',
+    pointBorderColor: '#e74c3c'
+  }));
+
   window.monthlyChart_instance = new Chart(ctx, {
     type: 'line',
-    data: {
-      datasets: [{
-        label: 'Average concurrent players',
-        data: points,
-        borderColor: '#2ecc71',
-        backgroundColor: 'rgba(46, 204, 113, 0.14)',
-        borderWidth: 2,
-        tension: 0.25,
-        fill: true,
-        // measured data is green, interpolated stretches are red, so filled-in
-        // gaps can never be read as real measurements
-        pointRadius: (c) => (c.raw && c.raw.interpolated ? 2.5 : 3.5),
-        pointBackgroundColor: (c) => (c.raw && c.raw.interpolated ? '#e74c3c' : '#2ecc71'),
-        pointBorderColor: (c) => (c.raw && c.raw.interpolated ? '#e74c3c' : '#2ecc71'),
-        segment: {
-          borderColor: (c) => ((c.p0.raw && c.p0.raw.interpolated) || (c.p1.raw && c.p1.raw.interpolated)) ? '#e74c3c' : '#2ecc71',
-          borderDash: (c) => ((c.p0.raw && c.p0.raw.interpolated) || (c.p1.raw && c.p1.raw.interpolated)) ? [5, 4] : undefined
-        }
-      }]
-    },
+    data: { datasets: [measuredDataset, ...interpolatedDatasets] },
     options: {
       responsive: true,
       maintainAspectRatio: false,
