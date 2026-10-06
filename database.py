@@ -1264,19 +1264,23 @@ def get_recent_ips(days=7):
     within the last N days.
     """
     try:
-        with duckdb.connect(DB_FILE) as con:
-            cutoff = (datetime.now() - pd.Timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
-            rows = con.execute(
-                """
-                SELECT DISTINCT s.ip, s.port 
-                FROM samples_all sa
-                JOIN snaps sn ON sa.snapshot_id = sn.id
-                JOIN servers s ON sa.server_id = s.id
-                WHERE sn.timestamp >= ?
-                """,
-                [cutoff]
-            ).fetchall()
-            return [(r[0], int(r[1])) for r in rows]
+        # Shares the replica lock and opens read-only like the other readers:
+        # a read-write connection here collides with concurrent read-only
+        # connections ("same database file with a different configuration").
+        with g_replica_lock:
+            with duckdb.connect(DB_FILE, read_only=True) as con:
+                cutoff = (datetime.now() - pd.Timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+                rows = con.execute(
+                    """
+                    SELECT DISTINCT s.ip, s.port 
+                    FROM samples_all sa
+                    JOIN snaps sn ON sa.snapshot_id = sn.id
+                    JOIN servers s ON sa.server_id = s.id
+                    WHERE sn.timestamp >= ?
+                    """,
+                    [cutoff]
+                ).fetchall()
+                return [(r[0], int(r[1])) for r in rows]
     except Exception as e:
         logging.error(f"Failed to fetch recent IPs from DB: {e}")
         return []
