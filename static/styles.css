@@ -152,6 +152,86 @@
     color: #ccc;
     white-space: nowrap;
   }
+
+  /* =====================================================
+     TOP-3 MEDALS (gold / silver / bronze)
+     ===================================================== */
+  .ranking-section li.rank-medal {
+    padding-left: 0.7em;
+    margin-left: -0.7em;
+    font-weight: bold;
+  }
+  .ranking-section li.rank-1 {
+    background: linear-gradient(90deg, rgba(245, 197, 66, 0.30), rgba(245, 197, 66, 0.04) 78%);
+    box-shadow: inset 3px 0 0 0 #f5c542, inset 0 0 0 1px rgba(245, 197, 66, 0.18);
+    color: #ffe9a8;
+  }
+  .ranking-section li.rank-2 {
+    background: linear-gradient(90deg, rgba(199, 205, 214, 0.24), rgba(199, 205, 214, 0.03) 78%);
+    box-shadow: inset 3px 0 0 0 #c7cdd6, inset 0 0 0 1px rgba(199, 205, 214, 0.16);
+    color: #eef1f5;
+  }
+  .ranking-section li.rank-3 {
+    background: linear-gradient(90deg, rgba(205, 127, 69, 0.28), rgba(205, 127, 69, 0.04) 78%);
+    box-shadow: inset 3px 0 0 0 #cd7f45, inset 0 0 0 1px rgba(205, 127, 69, 0.18);
+    color: #f3cdae;
+  }
+  .ranking-section li.rank-1 .rank-pct {
+    color: #ffd95e;
+  }
+  .ranking-section li.rank-2 .rank-pct {
+    color: #d5dbe3;
+  }
+  .ranking-section li.rank-3 .rank-pct {
+    color: #e0a878;
+  }
+
+  /* Gold also gets a slow sheen sweep and a twinkling sparkle */
+  .ranking-section li.rank-1::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 30%, rgba(255, 236, 170, 0.28) 47%, transparent 62%);
+    background-size: 260% 100%;
+    background-repeat: no-repeat;
+    animation: rank-sheen 4.2s ease-in-out infinite;
+    pointer-events: none;
+  }
+  /* four-point star drawn with two thin bars, glowing and twinkling */
+  .ranking-section li.rank-1::after {
+    content: '';
+    position: absolute;
+    top: 22%;
+    left: 26%;
+    width: 11px;
+    height: 11px;
+    background-image:
+      linear-gradient(#fffdf2, #fffdf2),
+      linear-gradient(#fffdf2, #fffdf2);
+    background-size: 2px 100%, 100% 2px;
+    background-position: center, center;
+    background-repeat: no-repeat;
+    filter: drop-shadow(0 0 4px rgba(255, 223, 120, 0.95));
+    animation: rank-twinkle 3.4s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes rank-sheen {
+    0%, 12% { background-position: 190% 0; }
+    58%, 100% { background-position: -80% 0; }
+  }
+  @keyframes rank-twinkle {
+    0%, 100% { opacity: 0; transform: scale(0.55) rotate(0deg); }
+    35%, 65% { opacity: 1; transform: scale(1.15) rotate(45deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ranking-section li.rank-1::before {
+      animation: none;
+    }
+    .ranking-section li.rank-1::after {
+      animation: none;
+      opacity: 0.7;
+    }
+  }
   
   /* Total summary box */
   .ranking-total {

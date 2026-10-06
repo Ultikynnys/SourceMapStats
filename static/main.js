@@ -269,8 +269,13 @@ function renderChart(data) {
   mapRankingEl.textContent = '';
   (Array.isArray(data.ranking) ? data.ranking : []).forEach((m, idx) => {
     const li = document.createElement('li');
+    const label = String(m.label || '');
+    // gold / silver / bronze for the top three (never for the 'Other' bucket)
+    if (idx < 3 && label.toLowerCase() !== 'other') {
+      li.classList.add('rank-medal', `rank-${idx + 1}`);
+    }
 
-    li.appendChild(document.createTextNode(String(m.label || '')));
+    li.appendChild(document.createTextNode(label));
     const pct = document.createElement('span');
     pct.className = 'rank-pct';
     pct.textContent = `(${m.pop}%)`;
@@ -283,9 +288,13 @@ function renderChart(data) {
   const serverRankingEl = document.getElementById('serverRanking');
   serverRankingEl.textContent = '';
   let totalAvgPlayers = 0;
-  serverRank.forEach((s) => {
+  serverRank.forEach((s, idx) => {
     const li = document.createElement('li');
-    li.appendChild(document.createTextNode(String(s.label || '')));
+    const label = String(s.label || '');
+    if (idx < 3 && label.toLowerCase() !== 'other') {
+      li.classList.add('rank-medal', `rank-${idx + 1}`);
+    }
+    li.appendChild(document.createTextNode(label));
     const pct = document.createElement('span');
     pct.className = 'rank-pct';
     pct.textContent = `(${s.pop})`;
