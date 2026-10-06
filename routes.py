@@ -83,7 +83,14 @@ def data_coverage():
 @bp.route("/")
 @rate_limiter
 def index():
-    return current_app.send_static_file("index.html")
+    response = current_app.send_static_file("index.html")
+    site_title = os.getenv("SITE_TITLE", "Team Fortress 2 Map Stats")
+    # index.html ships with a replaceable @@SITE_TITLE@@ token so instances
+    # can rename the site without editing the HTML
+    response.direct_passthrough = False
+    html = response.get_data(as_text=True).replace("@@SITE_TITLE@@", site_title)
+    response.set_data(html)
+    return response
 
 # ─── Admin Panel Routes ─────────────────────────────────────────────────
 from utils import admin_only, is_admin_ip, get_request_stats, ADMIN_IPS, track_request

@@ -150,6 +150,9 @@ PUBLIC_MODE: bool = False  # <-- default (local-only)
 Configure SourceMapStats via the `.env` file:
 
 ```ini
+# Website title shown in the page header and browser tab
+SITE_TITLE=Team Fortress 2 Map Stats
+
 # Steam Web API key (required)
 STEAM_API_KEY=your-steam-api-key-here
 

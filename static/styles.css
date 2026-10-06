@@ -1,5 +1,11 @@
 /* styles.css */
 
+@font-face {
+  font-family: 'TF2 Build';
+  src: url('/static/fonts/TF2Build.ttf') format('truetype');
+  font-display: swap;
+}
+
 #dataFreshness {
     position: fixed;
     top: 10px;
@@ -16,13 +22,18 @@
    GLOBAL
    ===================================================== */
    body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'TF2 Build', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: #121212;
     margin: 0;
     padding: 0;
     color: #e0e0e0;
   }
   
+  /* form controls do not inherit the page font by default */
+  input, select, button, textarea {
+    font-family: inherit;
+  }
+
   /* Screen-reader-only utility */
   .sr-only {
     position: absolute;
@@ -63,20 +74,29 @@
      ===================================================== */
   .chart-params-container {
     display: grid;
-    /* LEFT column now auto-sized to its content */
-    grid-template-columns: auto minmax(800px, 2fr) minmax(200px, 3fr);
+    /* left column: ranking with parameters underneath; right: charts */
+    grid-template-columns: minmax(220px, 1fr) minmax(800px, 2.5fr);
+    grid-template-rows: auto 1fr;
     gap: 20px;
     align-items: start;
   }
   
-  /* allow the left & right panels to shrink */
   .chart-params-container > .ranking-section,
   .chart-params-container > .params-section {
+    grid-column: 1;
     min-width: 0;
   }
+  .chart-params-container > .ranking-section {
+    grid-row: 1;
+  }
+  .chart-params-container > .params-section {
+    grid-row: 2;
+  }
   
-  /* keep the middle (chart) column at least as wide as the canvas */
+  /* keep the chart column at least as wide as the canvas */
   .chart-params-container > .chart-status-section {
+    grid-column: 2;
+    grid-row: 1 / span 2;
     min-width: 800px;
   }
   
@@ -360,13 +380,19 @@
      ===================================================== */
   @media (max-width: 1100px) {
     .chart-params-container {
-      grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
     }
     .chart-params-container > .ranking-section {
-      grid-column: 1 / -1;
+      grid-row: 1;
     }
     .chart-params-container > .chart-status-section {
+      grid-column: 1;
+      grid-row: 2;
       min-width: 0;
+    }
+    .chart-params-container > .params-section {
+      grid-row: 3;
     }
   }
   @media (max-width: 720px) {
@@ -374,6 +400,7 @@
       width: 100%;
       margin: 0;
       padding: 12px;
+      box-sizing: border-box;
     }
     header h1 {
       font-size: 1.4em;

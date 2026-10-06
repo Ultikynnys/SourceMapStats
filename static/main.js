@@ -1,3 +1,8 @@
+/* All chart text (titles, legends, ticks, tooltips) uses the site font */
+if (window.Chart) {
+  Chart.defaults.font.family = "'TF2 Build', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+}
+
 /* Helper utilities */
 function createThrottledFunction(fn, delay) {
   let last = 0;
@@ -161,7 +166,7 @@ async function doFetch(url, options = {}) {
     if (res.status === 429) {
       const d = await res.json().catch(() => ({}));
       const cd = d.cooldown || 1;
-      alert(`Rate limited — cool-down ${cd}s`);
+      alert(`Rate limited: cool-down ${cd}s`);
       setAllButtonsDisabled(true);
       setTimeout(() => setAllButtonsDisabled(false), cd * 1000);
       throw new Error('Rate limited');
@@ -298,12 +303,12 @@ function renderChart(data) {
       canvasId: 'chartCanvas',
       chartVar: 'myChart_instance',
       type: 'line',
-      title: `${titleCountText} Maps — Share of Daily Players (%)`,
+      title: `${titleCountText} Maps: Share of Daily Players (%)`,
       data: { labels: data.labels, datasets: mapDatasets },
       options: {
         plugins: {
           legend: { position: 'bottom', labels: { color: 'white' } },
-          title: { display: true, text: `${titleCountText} Maps — Share of Daily Players (%)`, color: 'white' }
+          title: { display: true, text: `${titleCountText} Maps: Share of Daily Players (%)`, color: 'white' }
         },
         scales: {
           x: { stacked: true, title: { display: true, text: 'Date', color: 'white' } },
@@ -315,12 +320,12 @@ function renderChart(data) {
       canvasId: 'totalPlayersChart',
       chartVar: 'totalPlayersChart_instance',
       type: 'line',
-      title: 'Total Daily Players — Stacked by Server',
+      title: 'Total Daily Players: Stacked by Server',
       data: { labels: data.labels, datasets: serverDatasets },
       options: {
         plugins: {
           legend: { position: 'bottom', labels: { color: 'white' } },
-          title: { display: true, text: 'Total Daily Players — Stacked by Server', color: 'white' }
+          title: { display: true, text: 'Total Daily Players: Stacked by Server', color: 'white' }
         },
         scales: {
           x: { stacked: true, title: { display: true, text: 'Date', color: 'white' } },
