@@ -85,7 +85,13 @@ def data_coverage():
 def monthly_averages():
     """Average concurrent players per half-month bucket over the last 12
     months (24 points per full year) to surface seasonal trends."""
-    return jsonify(get_monthly_averages())
+    from utils import parse_chart_params
+    params = parse_chart_params(request.args)
+    return jsonify(get_monthly_averages(
+        only_maps_containing=params['only_maps_containing'],
+        server_filter=params['server_filter'],
+        only_servers_containing=params['only_servers_containing'],
+    ))
 
 # ─── UI route ───────────────────────────────────────────────────────────
 @bp.route("/")

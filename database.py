@@ -625,23 +625,57 @@ MONTHLY_CHART_MONTHS = 12
 MONTHLY_CHART_HALF = 15  # day of month that starts the second half-month bucket
 
 
-def get_monthly_averages(months=MONTHLY_CHART_MONTHS):
+def get_monthly_averages(months=MONTHLY_CHART_MONTHS, only_maps_containing=None, server_filter=None, only_servers_containing=None):
     """Average concurrent players per half-month bucket over the last `months`
     calendar months. Two buckets per month means a full year yields 24 points,
-    which makes seasonal swings visible. Deliberately global: it ignores the
-    view's map/server filters so the trend stays comparable over time."""
-    cache_key = ('monthly_averages', months)
+    which makes seasonal swings visible.
+
+    The player sum honours the same map/server filters as the main chart while
+    the snapshot denominator stays global, exactly like the daily series, so
+    these numbers line up with the rest of the dashboard."""
+    cache_key = (
+        'monthly_averages', months,
+        tuple(only_maps_containing or []),
+        server_filter or 'ALL',
+        tuple(only_servers_containing or []),
+    )
     cached = g_chart_data_cache.get(cache_key)
     if cached and (time.time() - cached['timestamp']) < CACHE_EXPIRY_SECONDS:
         return cached['data']
 
-    result = _compute_monthly_averages(months)
+    result = _compute_monthly_averages(months, only_maps_containing, server_filter, only_servers_containing)
     g_chart_data_cache[cache_key] = {'timestamp': time.time(), 'data': result}
     return result
 
 
-def _compute_monthly_averages(months):
+def _compute_monthly_averages(months, only_maps_containing=None, server_filter=None, only_servers_containing=None):
     empty = {'labels': [], 'averages': [], 'snapshots': []}
+
+    # Mirrors the main chart's filter semantics: the player sum is filtered,
+    # the snapshot denominator (below) stays global.
+    filter_clauses, filter_params = [], []
+    pattern = _regex_filter_pattern(only_maps_containing)
+    if pattern:
+        filter_clauses.append("REGEXP_MATCHES(m.name, ?)")
+        filter_params.append(pattern)
+    if server_filter and isinstance(server_filter, str) and server_filter.upper() != 'ALL':
+        try:
+            ip_str, port_str = server_filter.split(':', 1)
+            ip_str, port_val = ip_str.strip(), int(port_str.strip())
+            if ip_str and port_val >= 0:
+                filter_clauses.append("s.ip = ? AND s.port = ?")
+                filter_params.extend([ip_str, port_val])
+        except Exception:
+            pass
+    pattern = _regex_filter_pattern(only_servers_containing)
+    if pattern:
+        filter_clauses.append(
+            "EXISTS (SELECT 1 FROM server_names snam WHERE snam.ip = s.ip "
+            "AND snam.port = s.port AND REGEXP_MATCHES(snam.name, ?))"
+        )
+        filter_params.append(pattern)
+    extra_where = "".join(f" AND {c}" for c in filter_clauses)
+
     snaps_sql = """
         SELECT CAST(date_trunc('month', timestamp) AS DATE) AS month,
                CASE WHEN EXTRACT(day FROM timestamp) <= ? THEN 1 ELSE 2 END AS half,
@@ -650,21 +684,25 @@ def _compute_monthly_averages(months):
         WHERE timestamp >= ? AND timestamp < ?
         GROUP BY 1, 2
     """
-    players_rollup_sql = """
-        SELECT CAST(date_trunc('month', bucket) AS DATE) AS month,
-               CASE WHEN EXTRACT(day FROM bucket) <= ? THEN 1 ELSE 2 END AS half,
-               SUM(players)::BIGINT AS players
-        FROM sample_rollups_2h
-        WHERE bucket >= ? AND bucket < ?
+    players_rollup_sql = f"""
+        SELECT CAST(date_trunc('month', r.bucket) AS DATE) AS month,
+               CASE WHEN EXTRACT(day FROM r.bucket) <= ? THEN 1 ELSE 2 END AS half,
+               SUM(r.players)::BIGINT AS players
+        FROM sample_rollups_2h r
+        JOIN servers s ON r.server_id = s.id
+        JOIN maps m ON r.map_id = m.id
+        WHERE r.bucket >= ? AND r.bucket < ?{extra_where}
         GROUP BY 1, 2
     """
-    players_sample_sql = """
+    players_sample_sql = f"""
         SELECT CAST(date_trunc('month', sn.timestamp) AS DATE) AS month,
                CASE WHEN EXTRACT(day FROM sn.timestamp) <= ? THEN 1 ELSE 2 END AS half,
                SUM(sa.players)::BIGINT AS players
         FROM samples_all sa
         JOIN snaps sn ON sa.snapshot_id = sn.id
-        WHERE sn.timestamp >= ? AND sn.timestamp < ?
+        JOIN servers s ON sa.server_id = s.id
+        JOIN maps m ON sa.map_id = m.id
+        WHERE sn.timestamp >= ? AND sn.timestamp < ?{extra_where}
         GROUP BY 1, 2
     """
 
@@ -690,9 +728,9 @@ def _compute_monthly_averages(months):
                 ).fetchone()[0]
                 if use_rollups:
                     logging.info("[Monthly] Using 2h rollup table for aggregation")
-                    players_df = con.execute(players_rollup_sql, [MONTHLY_CHART_HALF, ws, we]).df()
+                    players_df = con.execute(players_rollup_sql, [MONTHLY_CHART_HALF, ws, we] + filter_params).df()
                 else:
-                    players_df = con.execute(players_sample_sql, [MONTHLY_CHART_HALF, ws, we]).df()
+                    players_df = con.execute(players_sample_sql, [MONTHLY_CHART_HALF, ws, we] + filter_params).df()
     except Exception as e:
         logging.error(f"[Monthly] Failed to compute monthly averages: {e}")
         return empty

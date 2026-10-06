@@ -204,16 +204,21 @@ async function checkCSVStatus() {
   } catch { }
 }
 
-/* Fetch chart data */
-async function fetchData() {
-  const form = document.querySelector('#paramsForm');
-  if (!form) throw new Error('paramsForm not found');
+/* Build the query string shared by the data and monthly endpoints */
+function buildParams() {
   const formData = new FormData(document.getElementById('paramsForm'));
   const params = new URLSearchParams();
   for (const [key, value] of formData.entries()) {
     params.append(key, value);
   }
-  return await doFetch(`/api/data?${params.toString()}`);
+  return params;
+}
+
+/* Fetch chart data */
+async function fetchData() {
+  const form = document.querySelector('#paramsForm');
+  if (!form) throw new Error('paramsForm not found');
+  return await doFetch(`/api/data?${buildParams().toString()}`);
 }
 
 /* Debounced chart update */
@@ -568,10 +573,10 @@ const updateChart = createThrottledFunction(async (showLoadingOverlay = true) =>
     const chartData = await fetchData();
     renderChart(chartData);
 
-    // The seasonal chart is independent of the view filters, so a failure
+    // The seasonal chart follows the same filters as the view, so a failure
     // here must not break the main charts
     try {
-      const monthly = await doFetch('/api/monthly');
+      const monthly = await doFetch(`/api/monthly?${buildParams().toString()}`);
       renderMonthlyChart(monthly);
     } catch (monthlyError) {
       console.debug('Monthly averages unavailable:', monthlyError);
