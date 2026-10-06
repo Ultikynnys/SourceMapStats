@@ -409,6 +409,73 @@ function renderChart(data) {
   });
 }
 
+/* Seasonal chart: average concurrent players per half-month, last 12 months */
+function renderMonthlyChart(data) {
+  const canvas = document.getElementById('monthlyChartCanvas');
+  if (!canvas) return;
+
+  const container = canvas.parentElement;
+  const labels = Array.isArray(data && data.labels) ? data.labels : [];
+  const averages = Array.isArray(data && data.averages) ? data.averages : [];
+  const points = labels.map((label, i) => ({ x: label, y: averages[i] }));
+
+  container.classList.toggle('empty', points.length === 0);
+  if (points.length === 0) {
+    if (window.monthlyChart_instance) {
+      window.monthlyChart_instance.destroy();
+      window.monthlyChart_instance = null;
+    }
+    return;
+  }
+
+  const ctx = canvas.getContext('2d');
+  if (window.monthlyChart_instance) window.monthlyChart_instance.destroy();
+
+  window.monthlyChart_instance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [{
+        label: 'Average concurrent players',
+        data: points,
+        borderColor: '#f39c12',
+        backgroundColor: 'rgba(243, 156, 18, 0.3)',
+        borderWidth: 2,
+        pointRadius: 3,
+        tension: 0.25,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        title: { display: true, text: 'Average Players per Month (last 12 months)', color: 'white' },
+        tooltip: {
+          callbacks: {
+            title: (ctx2) => (ctx2.length ? new Date(ctx2[0].parsed.x).toLocaleDateString() : ''),
+            label: (ctx2) => `${ctx2.parsed.y} average players`
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: 'month', displayFormats: { month: 'yyyy-MM' } },
+          ticks: { color: 'white', maxRotation: 0, autoSkip: true },
+          grid: { color: 'rgba(255,255,255,0.2)' }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: 'white' },
+          grid: { color: 'rgba(255,255,255,0.2)' },
+          title: { display: true, text: 'Average Players', color: 'white' }
+        }
+      }
+    }
+  });
+}
+
 /* Date Range Logic */
 function initDateRange(minDateStr, maxDateStr) {
   const startInput = document.getElementById('StartDateInput');
@@ -500,6 +567,15 @@ const updateChart = createThrottledFunction(async (showLoadingOverlay = true) =>
     await checkCSVStatus();
     const chartData = await fetchData();
     renderChart(chartData);
+
+    // The seasonal chart is independent of the view filters, so a failure
+    // here must not break the main charts
+    try {
+      const monthly = await doFetch('/api/monthly');
+      renderMonthlyChart(monthly);
+    } catch (monthlyError) {
+      console.debug('Monthly averages unavailable:', monthlyError);
+    }
 
     if (!chartData.labels.length) {
       alert('No chart data found for the selected parameters.');

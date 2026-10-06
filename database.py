@@ -621,6 +621,101 @@ def get_date_range():
     with g_served_lock:
         return g_served_data.get('date_range', {'min_date': None, 'max_date': None})
 
+MONTHLY_CHART_MONTHS = 12
+MONTHLY_CHART_HALF = 15  # day of month that starts the second half-month bucket
+
+
+def get_monthly_averages(months=MONTHLY_CHART_MONTHS):
+    """Average concurrent players per half-month bucket over the last `months`
+    calendar months. Two buckets per month means a full year yields 24 points,
+    which makes seasonal swings visible. Deliberately global: it ignores the
+    view's map/server filters so the trend stays comparable over time."""
+    cache_key = ('monthly_averages', months)
+    cached = g_chart_data_cache.get(cache_key)
+    if cached and (time.time() - cached['timestamp']) < CACHE_EXPIRY_SECONDS:
+        return cached['data']
+
+    result = _compute_monthly_averages(months)
+    g_chart_data_cache[cache_key] = {'timestamp': time.time(), 'data': result}
+    return result
+
+
+def _compute_monthly_averages(months):
+    empty = {'labels': [], 'averages': [], 'snapshots': []}
+    snaps_sql = """
+        SELECT CAST(date_trunc('month', timestamp) AS DATE) AS month,
+               CASE WHEN EXTRACT(day FROM timestamp) <= ? THEN 1 ELSE 2 END AS half,
+               COUNT(DISTINCT guid) AS snapshots
+        FROM snaps
+        WHERE timestamp >= ? AND timestamp < ?
+        GROUP BY 1, 2
+    """
+    players_rollup_sql = """
+        SELECT CAST(date_trunc('month', bucket) AS DATE) AS month,
+               CASE WHEN EXTRACT(day FROM bucket) <= ? THEN 1 ELSE 2 END AS half,
+               SUM(players)::BIGINT AS players
+        FROM sample_rollups_2h
+        WHERE bucket >= ? AND bucket < ?
+        GROUP BY 1, 2
+    """
+    players_sample_sql = """
+        SELECT CAST(date_trunc('month', sn.timestamp) AS DATE) AS month,
+               CASE WHEN EXTRACT(day FROM sn.timestamp) <= ? THEN 1 ELSE 2 END AS half,
+               SUM(sa.players)::BIGINT AS players
+        FROM samples_all sa
+        JOIN snaps sn ON sa.snapshot_id = sn.id
+        WHERE sn.timestamp >= ? AND sn.timestamp < ?
+        GROUP BY 1, 2
+    """
+
+    try:
+        with g_replica_lock:
+            with duckdb.connect(DB_FILE, read_only=True) as con:
+                row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
+                max_ts = _parse_datetime(row[0]) if row and row[0] is not None else None
+                if max_ts is None:
+                    return empty
+
+                window_start = (pd.Timestamp(max_ts) - pd.DateOffset(months=months)).normalize()
+                window_end = pd.Timestamp(max_ts).ceil('D') + pd.Timedelta(days=1)
+                ws, we = window_start.to_pydatetime(), window_end.to_pydatetime()
+
+                snaps_df = con.execute(snaps_sql, [MONTHLY_CHART_HALF, ws, we]).df()
+
+                # Rollups keep this cheap; raw samples are the fallback when the
+                # window predates the rolled-up data.
+                use_rollups = con.execute(
+                    "SELECT EXISTS(SELECT 1 FROM sample_rollups_2h WHERE bucket >= ? AND bucket < ?)",
+                    [ws, we],
+                ).fetchone()[0]
+                if use_rollups:
+                    logging.info("[Monthly] Using 2h rollup table for aggregation")
+                    players_df = con.execute(players_rollup_sql, [MONTHLY_CHART_HALF, ws, we]).df()
+                else:
+                    players_df = con.execute(players_sample_sql, [MONTHLY_CHART_HALF, ws, we]).df()
+    except Exception as e:
+        logging.error(f"[Monthly] Failed to compute monthly averages: {e}")
+        return empty
+
+    if snaps_df.empty:
+        return empty
+
+    merged = snaps_df.merge(players_df, on=['month', 'half'], how='left')
+    merged['players'] = merged['players'].fillna(0)
+    merged['snapshots'] = merged['snapshots'].fillna(0).astype(int)
+    merged['avg'] = (merged['players'] / merged['snapshots'].replace(0, 1)).round(2)
+
+    labels, averages, snapshots = [], [], []
+    for row in merged.sort_values(['month', 'half']).itertuples():
+        bucket_start = pd.Timestamp(row.month).replace(day=1 if int(row.half) == 1 else MONTHLY_CHART_HALF + 1)
+        labels.append(bucket_start.strftime('%Y-%m-%d'))
+        averages.append(float(row.avg))
+        snapshots.append(int(row.snapshots))
+
+    logging.info(f"[Monthly] Computed {len(labels)} half-month buckets over {months} months")
+    return {'labels': labels, 'averages': averages, 'snapshots': snapshots}
+
+
 def _update_served_cache_from_db():
     freshness = None
     date_range = {'min_date': None, 'max_date': None}

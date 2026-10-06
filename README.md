@@ -256,6 +256,7 @@ curl "http://localhost:5000/api/data?days_to_show=30&maps_to_show=5"
 | **GET** | `/api/date_range` | Returns `{ min_date, max_date }` of stored samples. |
 | **GET** | `/api/csv_status` | Status of the DB (`exists`, `empty`). Kept for backward compatibility. |
 | **GET** | `/api/data_coverage` | Returns overall date bounds for timeline UI. |
+| **GET** | `/api/monthly` | Average concurrent players per half-month bucket for the last 12 months (24 points per full year) for the seasonal chart. |
 
 ---
 

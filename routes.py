@@ -10,6 +10,7 @@ from database import (
     get_chart_data,
     get_data_freshness,
     get_date_range,
+    get_monthly_averages,
     DB_FILE
 )
 from utils import rate_limiter
@@ -78,6 +79,13 @@ def data_coverage():
         "end": dr.get('max_date'),
         "present_dates": []  # Omit to avoid DB hit; frontend can infer from start/end
     })
+
+@bp.route("/api/monthly")
+@rate_limiter
+def monthly_averages():
+    """Average concurrent players per half-month bucket over the last 12
+    months (24 points per full year) to surface seasonal trends."""
+    return jsonify(get_monthly_averages())
 
 # ─── UI route ───────────────────────────────────────────────────────────
 @bp.route("/")
