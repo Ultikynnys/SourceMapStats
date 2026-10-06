@@ -48,6 +48,8 @@
     border-radius: 0;
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
   }
+
+
   
   /* Header */
   header h1 {
@@ -352,5 +354,67 @@
   #connectionStatus.connected    { color: #14c521; }
   #connectionStatus.disconnected { color: #e02424; }
 
+
+  /* =====================================================
+     RESPONSIVE
+     ===================================================== */
+  @media (max-width: 1100px) {
+    .chart-params-container {
+      grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+    }
+    .chart-params-container > .ranking-section {
+      grid-column: 1 / -1;
+    }
+    .chart-params-container > .chart-status-section {
+      min-width: 0;
+    }
+  }
+  @media (max-width: 720px) {
+    .container {
+      width: 100%;
+      margin: 0;
+      padding: 12px;
+    }
+    header h1 {
+      font-size: 1.4em;
+      padding: 0 0.4em;
+    }
+    .chart-params-container {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .chart-params-container > .chart-status-section {
+      min-width: 0;
+    }
+    .chart-box,
+    .status-section,
+    .params-section,
+    .ranking-section {
+      padding: 12px;
+    }
+    .form-group input,
+    .form-group select {
+      flex: 1 1 auto;
+      width: 100%;
+    }
+    /* in column direction the label's flex-basis would apply to height */
+    .form-group label {
+      flex: none;
+    }
+    .github-corner svg {
+      width: 56px;
+      height: 56px;
+    }
+    header h1 {
+      padding-right: 48px;
+    }
+    .chart-container {
+      height: 320px;
+    }
+    #dataFreshness {
+      position: static;
+      text-align: center;
+      display: block;
+    }
+  }
 
   /* make the chart container scrollable if it still overflows */
