@@ -4,6 +4,16 @@ if (window.Chart) {
   Chart.defaults.font.family = "'TF2 Secondary', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
 }
 
+/* Chart titles sit above the plot and need to stay readable, so they run
+   larger than the default and drop a size on narrow screens. */
+function chartTitleFont() {
+  return {
+    family: "'TF2 Secondary', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    size: window.innerWidth < 700 ? 16 : 20,
+    weight: 'bold'
+  };
+}
+
 /* Helper utilities */
 function createThrottledFunction(fn, delay) {
   let last = 0;
@@ -362,7 +372,7 @@ function renderChart(data) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: true, position: 'bottom', labels: { color: 'white' } },
-        title: { display: true, text: config.title, color: 'white' },
+        title: { display: true, text: config.title, color: 'white', font: chartTitleFont() },
         tooltip: {
           mode: 'index',
           intersect: false,
@@ -456,7 +466,7 @@ function renderMonthlyChart(data) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        title: { display: true, text: 'Average Players per Month (last 12 months)', color: 'white' },
+        title: { display: true, text: 'Average Players per Month (last 12 months)', color: 'white', font: chartTitleFont() },
         tooltip: {
           callbacks: {
             title: (ctx2) => (ctx2.length ? new Date(ctx2[0].parsed.x).toLocaleDateString() : ''),
