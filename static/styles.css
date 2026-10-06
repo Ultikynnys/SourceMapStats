@@ -157,6 +157,7 @@ body::before {
   /* each item is one line, no wrapping, with ellipsis */
   .ranking-section li {
     position: relative;
+    padding-left: 0.55em;    /* same inset for every row, leaves room for the medal bar */
     padding-right: 4.5em;    /* leave room for the percent */
     margin-bottom: 0.5em;
     overflow: hidden;
@@ -179,8 +180,6 @@ body::before {
      TOP-3 MEDALS (gold / silver / bronze)
      ===================================================== */
   .ranking-section li.rank-medal {
-    padding-left: 0.7em;
-    margin-left: -0.7em;
     font-weight: bold;
   }
   .ranking-section li.rank-1 {
