@@ -1,13 +1,19 @@
 /* styles.css */
 
-/* Single surface colour shared by every container */
+/* Single surface colour shared by every container, and the heading/accent
+   colour shared by the title and every heading */
 :root {
   --surface: #333333;
+  --accent: #f39c12;
 }
 
 /* Page backdrop texture, held at 10% opacity. Default is Source's own orange
 dev wall material (dev_measurewall01a, extracted from the game's VPK); set
 SITE_BACKGROUND_TEXTURE to a self-hosted image (or data: URI) to override. */
+html {
+  /* keep the layout's centre line steady whether or not a scrollbar is shown */
+  scrollbar-gutter: stable both-edges;
+}
 body::before {
   content: '';
   position: fixed;
@@ -55,11 +61,26 @@ body::before {
     margin: 0;
     padding: 0;
     color: #e0e0e0;
+    /* drop shadow below the text (not a radial halo) so it reads wherever the
+       background texture shows through; text-shadow inherits to descendants */
+    text-shadow: 0 2px 3px rgba(0, 0, 0, 0.95), 0 1px 1px rgba(0, 0, 0, 0.85);
   }
 
-  /* Headings keep the blocky TF2 Build face, as in the game's HUD */
+  /* Headings keep the blocky TF2 Build face, as in the game's HUD. The sheen
+     along the top contours is a lightened, softened tint of each heading's own
+     colour (an overlay rather than a white line) over the dark shadow. */
   h1, h2 {
     font-family: 'TF2 Build', 'TF2 Secondary', sans-serif;
+    color: var(--accent);   /* headings share the title's colour */
+    /* TF2 Build is a heavy face; a little extra tracking keeps the glyphs
+       from crowding each other */
+    letter-spacing: 0.03em;
+    /* fallback for browsers without color-mix: the plain drop shadow */
+    text-shadow: 0 2px 3px rgba(0, 0, 0, 0.95), 0 1px 1px rgba(0, 0, 0, 0.85);
+    text-shadow:
+      0 -1px 1px color-mix(in srgb, currentColor 60%, white 40%),
+      0 2px 3px rgba(0, 0, 0, 0.95),
+      0 1px 1px rgba(0, 0, 0, 0.85);
   }
   
   /* form controls do not inherit the page font by default */
@@ -96,10 +117,18 @@ body::before {
 
   
   /* Header */
-  header h1 {
+  header {
     text-align: center;
-    margin-bottom: 20px;
-    color: #f39c12;
+  }
+  header h1 {
+    /* the main heading leads the page, so it runs noticeably larger than the
+       rest and scales with the viewport */
+    font-size: clamp(2rem, 3.5vw, 2.75rem);
+    text-align: center;
+    /* equal ink-to-edges space above and below: the container already supplies
+       60px above (40 margin + 20 padding), so match it underneath */
+    margin: 0 0 60px;
+    color: var(--accent);
   }
   
   /* =====================================================
@@ -111,6 +140,8 @@ body::before {
     grid-template-columns: minmax(220px, 1fr) minmax(800px, 2.5fr);
     grid-template-rows: auto 1fr;
     gap: 20px;
+    /* left column keeps its own natural height; the chart column stretches to
+       match it and resizes its charts to fit (see the two-column media query) */
     align-items: start;
   }
   
@@ -142,7 +173,7 @@ body::before {
     /* opaque surfaces keep the page texture from showing through at a second
        strength, which read as two backgrounds */
     background: var(--surface);
-    padding: 1em;
+    padding: 20px;    /* match the other panels so the headings line up */
     border-radius: 0;
     color: white;
   }
@@ -258,6 +289,9 @@ body::before {
     display: flex;
     flex-direction: column;
     gap: 1em;
+    /* take the left column's full height; the charts inside share it out */
+    align-self: stretch;
+    min-height: 0;
   }
   
   /* =====================================================
@@ -269,6 +303,28 @@ body::before {
     border-radius: 0;
     text-align: center;
     position: relative; /* for overlay positioning */
+  }
+  /* Two-column layout only: let the charts divide the chart column's height so
+     the column ends level with the left column instead of forcing it taller.
+     Below this width the grid is single-column and the fixed heights apply. */
+  @media (min-width: 1101px) {
+    .chart-box {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .chart-box .chart-container {
+      flex: 1 1 0;
+      height: auto;
+      min-height: 220px;   /* keep each chart usable */
+    }
+    .chart-box .chart-container.empty {
+      flex: 0 0 0;
+      height: 0;
+      min-height: 0;
+      margin: 0;
+    }
   }
   #playerCountDisplay {
     margin-top: 10px;
@@ -352,6 +408,17 @@ body::before {
   .cancel-btn {
     font-family: 'TF2 Build', 'TF2 Secondary', sans-serif;
   }
+  /* ...and carry the same raised treatment as the headings: a specular catch
+     along the top contours, tinted from the button's own colour, over the dark
+     drop shadow underneath */
+  .btn,
+  .cancel-btn {
+    letter-spacing: 0.03em;   /* match the headings' tracking */
+    text-shadow:
+      0 -1px 1px color-mix(in srgb, #f39c12 50%, white 50%),
+      0 2px 3px rgba(0, 0, 0, 0.55),
+      0 1px 1px rgba(0, 0, 0, 0.4);
+  }
   
   /* =====================================================
      Status panel
@@ -363,7 +430,7 @@ body::before {
     text-align: center;
   }
   .status-section h2 {
-    color: #f39c12;
+    color: var(--accent);
     margin-bottom: 15px;
   }
   .status-section p {
@@ -382,9 +449,9 @@ body::before {
     flex-direction: column;
   }
   .params-section h2 {
-    text-align: center;
+    text-align: left;
     margin-bottom: 20px;
-    color: #f39c12;
+    color: var(--accent);
   }
   
   .form-group {
@@ -409,6 +476,9 @@ body::before {
     border-radius: 0;
     background: #1e1e1e;
     color: #e0e0e0;
+    /* native widgets (the date picker icon, number spinners) follow the colour
+       scheme; without this they draw near-black on this dark surface */
+    color-scheme: dark;
   }
   /* Do not apply text-input styling to range sliders */
   .form-group input[type="range"] {
@@ -441,37 +511,35 @@ body::before {
     margin-top: 40px;
     text-align: center;
   }
+  /* footer stacks: repo link, then description, then copyright */
+  .footer-content .repo-row,
+  .footer-content .description {
+    margin: 0 0 0.6em;
+  }
+  .footer-content .copyright {
+    margin: 0;
+  }
   /* =====================================================
-     GITHUB CORNER (top-right “notch”)
+     GITHUB LINK (the footer wordmark links to the repo)
      ===================================================== */
-  .github-corner svg {
-    position: fixed;
-    top: 0;
-    right: 0;
-    z-index: 1000;
-    width: 100px;
-    height: 100px;
-    fill: #f39c12;
-    color: #ffffff;
-    transition: transform .3s ease;
+  .repo-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    color: var(--accent);
+    text-decoration: none;
+    font-family: 'TF2 Build', 'TF2 Secondary', sans-serif;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
   }
-  .github-corner:hover svg {
-    transform: scale(1.1);
+  .repo-link:hover {
+    text-decoration: underline;
   }
-  .github-corner .octo-arm {
-    transform-origin: 130px 106px;
-  }
-  .github-corner:hover .octo-arm {
-    animation: octo-wave 560ms ease-in-out;
-  }
-  @keyframes octo-wave {
-    0%,100% { transform: rotate(0deg); }
-    20%,60% { transform: rotate(-25deg); }
-    40%,80% { transform: rotate(10deg); }
-  }
-  @media (max-width: 500px) {
-    .github-corner:hover .octo-arm { animation: none; }
-    .github-corner .octo-arm       { animation: octo-wave 560ms ease-in-out; }
+  .repo-link .github-mark {
+    width: 1.05em;
+    height: 1.05em;
+    flex: none;
+    fill: currentColor;
   }
   
   /* Connection status colours */
@@ -530,13 +598,6 @@ body::before {
     /* in column direction the label's flex-basis would apply to height */
     .form-group label {
       flex: none;
-    }
-    .github-corner svg {
-      width: 56px;
-      height: 56px;
-    }
-    header h1 {
-      padding-right: 48px;
     }
     .chart-container {
       height: 320px;

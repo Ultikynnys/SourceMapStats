@@ -4,6 +4,87 @@ if (window.Chart) {
   Chart.defaults.font.family = "'TF2 Secondary', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
 }
 
+/* Chart titles keep their text shadow, but nothing else drawn on the canvas
+   does. The legend renders in the same draw pass as the title (before the
+   datasets), so instead of toggling the shadow by phase the built-in title is
+   made invisible - its space is still reserved - and the visible title is
+   drawn last with the shadow. Legend swatches, legend text, ticks and datasets
+   therefore stay shadow-free. */
+const chartTitleShadow = {
+  id: 'chartTitleShadow',
+  beforeInit(chart) {
+    const opt = chart.options.plugins && chart.options.plugins.title;
+    if (!opt) return;
+    opt.__shadowColor = opt.color;
+    opt.color = 'transparent';
+  },
+  afterDraw(chart) {
+    const opt = chart.options.plugins && chart.options.plugins.title;
+    if (!opt || opt.display === false || !opt.text) return;
+    const block = chart.titleBlock;
+    if (!block) return;
+    const text = Array.isArray(opt.text) ? opt.text.join(' ') : String(opt.text);
+    const font = opt.font || {};
+    const size = font.size || 16;
+    const family = font.family || (Chart.defaults.font && Chart.defaults.font.family) || 'sans-serif';
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.font = `${font.weight || 'bold'} ${size}px ${family}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+    ctx.shadowBlur = 2;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 3;
+    ctx.fillStyle = opt.__shadowColor || '#e0e0e0';
+    ctx.fillText(text, (block.left + block.right) / 2, (block.top + block.bottom) / 2);
+    ctx.restore();
+  }
+};
+
+/* The legend paints its swatch squares and its label text in one pass, so wrap
+   the legend's own draw: the shadow stays off for everything it paints and is
+   switched on only around the label text. Swatches stay flat, labels keep the
+   drop shadow. */
+const legendTextShadow = {
+  id: 'legendTextShadow',
+  afterInit(chart) {
+    const legend = chart.legend;
+    if (!legend || legend.__textShadowWrapped) return;
+    legend.__textShadowWrapped = true;
+    const originalDraw = legend.draw.bind(legend);
+    // the element's draw is invoked both with and without the chart argument,
+    // so use the chart captured here rather than the call arguments
+    legend.draw = function (...args) {
+      const ctx = chart.ctx;
+      if (!ctx) return originalDraw(...args);
+      const originalFillText = ctx.fillText;
+      const off = () => { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; };
+      off();
+      ctx.fillText = function (...args) {
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+        ctx.shadowBlur = 2;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 3;
+        const result = originalFillText.apply(ctx, args);
+        off();
+        return result;
+      };
+      try {
+        return originalDraw(...args);
+      } finally {
+        ctx.fillText = originalFillText;
+        off();
+      }
+    };
+  }
+};
+
+if (window.Chart) {
+  Chart.register(chartTitleShadow);
+  Chart.register(legendTextShadow);
+}
+
 /* Chart titles sit above the plot and need to stay readable, so they run
    larger than the default and drop a size on narrow screens. */
 function chartTitleFont() {
