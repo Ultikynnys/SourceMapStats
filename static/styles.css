@@ -83,10 +83,9 @@ body::before {
     max-width: 1400px;
     margin: 40px auto;
     padding: 20px;
-    /* slightly translucent so the page texture reads through the surface */
-    background: rgba(30, 30, 30, 0.86);
+    /* no surface of its own: the page texture is the single background */
+    background: transparent;
     border-radius: 0;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
   }
 
 
@@ -135,7 +134,7 @@ body::before {
      RANKING SECTION
      ===================================================== */
   .ranking-section {
-    background: rgba(0,0,0,0.3);
+    background: transparent;
     padding: 1em;
     border-radius: 0;
     color: white;
@@ -259,7 +258,7 @@ body::before {
      Chart box
      ===================================================== */
   .chart-box {
-    background: #333;
+    background: transparent;
     padding: 20px;
     border-radius: 0;
     text-align: center;
@@ -352,7 +351,7 @@ body::before {
      Status panel
      ===================================================== */
   .status-section {
-    background: #333;
+    background: transparent;
     padding: 20px;
     border-radius: 0;
     text-align: center;
@@ -370,7 +369,7 @@ body::before {
      Parameters panel
      ===================================================== */
   .params-section {
-    background: #2c2c2c;
+    background: transparent;
     padding: 20px;
     border-radius: 0;
     display: flex;
@@ -430,7 +429,7 @@ body::before {
      FOOTER
      ===================================================== */
   footer {
-    background: #1e1e1e;
+    background: transparent;
     padding: 20px 0;
     color: #e0e0e0;
     margin-top: 40px;
