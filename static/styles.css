@@ -1,8 +1,8 @@
 /* styles.css */
 
-/* Page backdrop texture, held at 10% opacity. Default is a Source-style
-   "dev" checkerboard drawn in CSS (no copyrighted texture ships with the
-   site); set SITE_BACKGROUND_TEXTURE to a self-hosted image to override. */
+/* Page backdrop texture, held at 10% opacity. Default is Source's own orange
+dev wall material (dev_measurewall01a, extracted from the game's VPK); set
+SITE_BACKGROUND_TEXTURE to a self-hosted image (or data: URI) to override. */
 body::before {
   content: '';
   position: fixed;
@@ -10,13 +10,9 @@ body::before {
   z-index: -1;
   opacity: 0.1;
   pointer-events: none;
-  /* orange / grey tiles on a grey base, like Source's dev_measure textures */
-  background-color: #767676;
-  background-image:
-    linear-gradient(45deg, #c8861c 25%, transparent 25%, transparent 75%, #c8861c 75%),
-    linear-gradient(45deg, #c8861c 25%, transparent 25%, transparent 75%, #c8861c 75%);
-  background-size: 96px 96px;
-  background-position: 0 0, 48px 48px;
+  background-image: url('/static/textures/dev_measurewall01a.png');
+  background-repeat: repeat;
+  background-size: 512px 512px;
 }
 
 @font-face {
