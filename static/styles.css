@@ -197,14 +197,12 @@
     animation: rank-sheen 4.2s ease-in-out infinite;
     pointer-events: none;
   }
-  /* four-point star drawn with two thin bars, glowing and twinkling */
-  .ranking-section li.rank-1::after {
-    content: '';
+  /* four-point star drawn with two thin bars; JS scatters several of these
+     across the gold row with staggered timings so they twinkle periodically */
+  .medal-spark {
     position: absolute;
-    top: 22%;
-    left: 26%;
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
     background-image:
       linear-gradient(#fffdf2, #fffdf2),
       linear-gradient(#fffdf2, #fffdf2);
@@ -212,7 +210,11 @@
     background-position: center, center;
     background-repeat: no-repeat;
     filter: drop-shadow(0 0 4px rgba(255, 223, 120, 0.95));
-    animation: rank-twinkle 3.4s ease-in-out infinite;
+    opacity: 0;
+    transform: scale(0.55);
+    animation-name: rank-twinkle;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
     pointer-events: none;
   }
   @keyframes rank-sheen {
@@ -227,9 +229,8 @@
     .ranking-section li.rank-1::before {
       animation: none;
     }
-    .ranking-section li.rank-1::after {
-      animation: none;
-      opacity: 0.7;
+    .medal-spark {
+      display: none;
     }
   }
   

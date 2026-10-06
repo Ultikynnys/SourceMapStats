@@ -254,6 +254,26 @@ async function updateDataFreshness() {
   }
 }
 
+/* Scatter sparkle particles across a gold medal row. Positions and timings
+   vary per particle (and per render) so they twinkle at different moments
+   instead of all firing together in one spot. */
+function addRankSparkles(li) {
+  const PARTICLE_COUNT = 7;
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const spark = document.createElement('span');
+    spark.className = 'medal-spark';
+    spark.setAttribute('aria-hidden', 'true');
+    spark.style.left = `${6 + Math.random() * 86}%`;
+    spark.style.top = `${10 + Math.random() * 60}%`;
+    const size = 7 + Math.random() * 7;
+    spark.style.width = `${size.toFixed(1)}px`;
+    spark.style.height = `${size.toFixed(1)}px`;
+    spark.style.animationDelay = `-${(Math.random() * 3.6).toFixed(2)}s`;
+    spark.style.animationDuration = `${(2.6 + Math.random() * 2).toFixed(2)}s`;
+    li.appendChild(spark);
+  }
+}
+
 /* Render all charts */
 function renderChart(data) {
   console.log("Rendering charts with data:", data);
@@ -273,6 +293,7 @@ function renderChart(data) {
     // gold / silver / bronze for the top three (never for the 'Other' bucket)
     if (idx < 3 && label.toLowerCase() !== 'other') {
       li.classList.add('rank-medal', `rank-${idx + 1}`);
+      if (idx === 0) addRankSparkles(li);
     }
 
     li.appendChild(document.createTextNode(label));
@@ -293,6 +314,7 @@ function renderChart(data) {
     const label = String(s.label || '');
     if (idx < 3 && label.toLowerCase() !== 'other') {
       li.classList.add('rank-medal', `rank-${idx + 1}`);
+      if (idx === 0) addRankSparkles(li);
     }
     li.appendChild(document.createTextNode(label));
     const pct = document.createElement('span');
@@ -468,17 +490,18 @@ function renderMonthlyChart(data) {
       datasets: [{
         label: 'Average concurrent players',
         data: points,
-        borderColor: '#f39c12',
-        backgroundColor: 'rgba(243, 156, 18, 0.3)',
+        borderColor: '#2ecc71',
+        backgroundColor: 'rgba(46, 204, 113, 0.14)',
         borderWidth: 2,
         tension: 0.25,
         fill: true,
-        // interpolated buckets are a lighter dot, and their segments dashed,
-        // so filled-in gaps are not mistaken for measured data
-        pointRadius: (c) => (c.raw && c.raw.interpolated ? 2 : 3.5),
-        pointBackgroundColor: (c) => (c.raw && c.raw.interpolated ? 'rgba(243, 156, 18, 0.55)' : '#f39c12'),
-        pointBorderColor: (c) => (c.raw && c.raw.interpolated ? 'rgba(243, 156, 18, 0.55)' : '#f39c12'),
+        // measured data is green, interpolated stretches are red, so filled-in
+        // gaps can never be read as real measurements
+        pointRadius: (c) => (c.raw && c.raw.interpolated ? 2.5 : 3.5),
+        pointBackgroundColor: (c) => (c.raw && c.raw.interpolated ? '#e74c3c' : '#2ecc71'),
+        pointBorderColor: (c) => (c.raw && c.raw.interpolated ? '#e74c3c' : '#2ecc71'),
         segment: {
+          borderColor: (c) => ((c.p0.raw && c.p0.raw.interpolated) || (c.p1.raw && c.p1.raw.interpolated)) ? '#e74c3c' : '#2ecc71',
           borderDash: (c) => ((c.p0.raw && c.p0.raw.interpolated) || (c.p1.raw && c.p1.raw.interpolated)) ? [5, 4] : undefined
         }
       }]
