@@ -434,7 +434,7 @@ function renderChart(data) {
   });
 }
 
-/* Seasonal chart: average concurrent players per half-month, last 12 months */
+/* Seasonal chart: average concurrent players per half-month for a calendar year */
 function renderMonthlyChart(data) {
   const canvas = document.getElementById('monthlyChartCanvas');
   if (!canvas) return;
@@ -442,7 +442,13 @@ function renderMonthlyChart(data) {
   const container = canvas.parentElement;
   const labels = Array.isArray(data && data.labels) ? data.labels : [];
   const averages = Array.isArray(data && data.averages) ? data.averages : [];
-  const points = labels.map((label, i) => ({ x: label, y: averages[i] }));
+  const interpolated = Array.isArray(data && data.interpolated) ? data.interpolated : [];
+  const points = labels.map((label, i) => ({
+    x: label,
+    y: averages[i],
+    interpolated: !!interpolated[i]
+  }));
+  const year = data && data.year ? data.year : new Date().getFullYear();
 
   container.classList.toggle('empty', points.length === 0);
   if (points.length === 0) {
@@ -465,9 +471,16 @@ function renderMonthlyChart(data) {
         borderColor: '#f39c12',
         backgroundColor: 'rgba(243, 156, 18, 0.3)',
         borderWidth: 2,
-        pointRadius: 3,
         tension: 0.25,
-        fill: true
+        fill: true,
+        // interpolated buckets are a lighter dot, and their segments dashed,
+        // so filled-in gaps are not mistaken for measured data
+        pointRadius: (c) => (c.raw && c.raw.interpolated ? 2 : 3.5),
+        pointBackgroundColor: (c) => (c.raw && c.raw.interpolated ? 'rgba(243, 156, 18, 0.55)' : '#f39c12'),
+        pointBorderColor: (c) => (c.raw && c.raw.interpolated ? 'rgba(243, 156, 18, 0.55)' : '#f39c12'),
+        segment: {
+          borderDash: (c) => ((c.p0.raw && c.p0.raw.interpolated) || (c.p1.raw && c.p1.raw.interpolated)) ? [5, 4] : undefined
+        }
       }]
     },
     options: {
@@ -475,18 +488,26 @@ function renderMonthlyChart(data) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        title: { display: true, text: 'Average Players per Month (last 12 months)', color: 'white', font: chartTitleFont() },
+        title: { display: true, text: `Average Players per Month (${year})`, color: 'white', font: chartTitleFont() },
         tooltip: {
           callbacks: {
             title: (ctx2) => (ctx2.length ? new Date(ctx2[0].parsed.x).toLocaleDateString() : ''),
-            label: (ctx2) => `${ctx2.parsed.y} average players`
+            label: (ctx2) => {
+              const p = ctx2.raw || {};
+              return p.interpolated
+                ? `${ctx2.parsed.y} average players (interpolated)`
+                : `${ctx2.parsed.y} average players`;
+            }
           }
         }
       },
       scales: {
         x: {
           type: 'time',
-          time: { unit: 'month', displayFormats: { month: 'yyyy-MM' } },
+          // fixed Jan..Dec axis so years are comparable even with gaps
+          min: `${year}-01-01`,
+          max: `${year}-12-31`,
+          time: { unit: 'month', displayFormats: { month: 'MMM' } },
           ticks: { color: 'white', maxRotation: 0, autoSkip: true },
           grid: { color: 'rgba(255,255,255,0.2)' }
         },

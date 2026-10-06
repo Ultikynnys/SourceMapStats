@@ -621,20 +621,23 @@ def get_date_range():
     with g_served_lock:
         return g_served_data.get('date_range', {'min_date': None, 'max_date': None})
 
-MONTHLY_CHART_MONTHS = 12
+
+
+
 MONTHLY_CHART_HALF = 15  # day of month that starts the second half-month bucket
 
 
-def get_monthly_averages(months=MONTHLY_CHART_MONTHS, only_maps_containing=None, server_filter=None, only_servers_containing=None):
-    """Average concurrent players per half-month bucket over the last `months`
-    calendar months. Two buckets per month means a full year yields 24 points,
-    which makes seasonal swings visible.
+def get_yearly_averages(year=None, only_maps_containing=None, server_filter=None, only_servers_containing=None):
+    """Average concurrent players per half-month bucket for a calendar year.
 
-    The player sum honours the same map/server filters as the main chart while
-    the snapshot denominator stays global, exactly like the daily series, so
-    these numbers line up with the rest of the dashboard."""
+    The axis is always January to December (24 points, two per month) so years
+    stay directly comparable. Buckets without data are linearly interpolated
+    between their neighbours (the ends hold the nearest known value) and are
+    flagged in `interpolated`. The player sum honours the same map/server
+    filters as the main chart while the snapshot denominator stays global,
+    matching the daily series, so the numbers line up with the dashboard."""
     cache_key = (
-        'monthly_averages', months,
+        'yearly_averages', year,
         tuple(only_maps_containing or []),
         server_filter or 'ALL',
         tuple(only_servers_containing or []),
@@ -643,13 +646,13 @@ def get_monthly_averages(months=MONTHLY_CHART_MONTHS, only_maps_containing=None,
     if cached and (time.time() - cached['timestamp']) < CACHE_EXPIRY_SECONDS:
         return cached['data']
 
-    result = _compute_monthly_averages(months, only_maps_containing, server_filter, only_servers_containing)
+    result = _compute_yearly_averages(year, only_maps_containing, server_filter, only_servers_containing)
     g_chart_data_cache[cache_key] = {'timestamp': time.time(), 'data': result}
     return result
 
 
-def _compute_monthly_averages(months, only_maps_containing=None, server_filter=None, only_servers_containing=None):
-    empty = {'labels': [], 'averages': [], 'snapshots': []}
+def _compute_yearly_averages(year, only_maps_containing=None, server_filter=None, only_servers_containing=None):
+    empty = {'year': year, 'labels': [], 'averages': [], 'snapshots': [], 'interpolated': []}
 
     # Mirrors the main chart's filter semantics: the player sum is filtered,
     # the snapshot denominator (below) stays global.
@@ -709,13 +712,16 @@ def _compute_monthly_averages(months, only_maps_containing=None, server_filter=N
     try:
         with g_replica_lock:
             with duckdb.connect(DB_FILE, read_only=True) as con:
-                row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
-                max_ts = _parse_datetime(row[0]) if row and row[0] is not None else None
-                if max_ts is None:
-                    return empty
+                if year is None:
+                    row = con.execute("SELECT max(timestamp) FROM snaps").fetchone()
+                    max_ts = _parse_datetime(row[0]) if row and row[0] is not None else None
+                    if max_ts is None:
+                        return empty
+                    year = int(pd.Timestamp(max_ts).year)
+                    empty['year'] = year
 
-                window_start = (pd.Timestamp(max_ts) - pd.DateOffset(months=months)).normalize()
-                window_end = pd.Timestamp(max_ts).ceil('D') + pd.Timedelta(days=1)
+                window_start = pd.Timestamp(year=int(year), month=1, day=1)
+                window_end = window_start + pd.DateOffset(years=1)
                 ws, we = window_start.to_pydatetime(), window_end.to_pydatetime()
 
                 snaps_df = con.execute(snaps_sql, [MONTHLY_CHART_HALF, ws, we]).df()
@@ -727,31 +733,69 @@ def _compute_monthly_averages(months, only_maps_containing=None, server_filter=N
                     [ws, we],
                 ).fetchone()[0]
                 if use_rollups:
-                    logging.info("[Monthly] Using 2h rollup table for aggregation")
+                    logging.info("[Yearly] Using 2h rollup table for aggregation")
                     players_df = con.execute(players_rollup_sql, [MONTHLY_CHART_HALF, ws, we] + filter_params).df()
                 else:
                     players_df = con.execute(players_sample_sql, [MONTHLY_CHART_HALF, ws, we] + filter_params).df()
     except Exception as e:
-        logging.error(f"[Monthly] Failed to compute monthly averages: {e}")
+        logging.error(f"[Yearly] Failed to compute yearly averages: {e}")
         return empty
 
-    if snaps_df.empty:
-        return empty
+    year = int(year)
+    snaps_by_bucket = {
+        (int(pd.Timestamp(r.month).month), int(r.half)): int(r.snapshots)
+        for r in snaps_df.itertuples()
+    }
+    players_by_bucket = {
+        (int(pd.Timestamp(r.month).month), int(r.half)): int(r.players)
+        for r in players_df.itertuples()
+    }
 
-    merged = snaps_df.merge(players_df, on=['month', 'half'], how='left')
-    merged['players'] = merged['players'].fillna(0)
-    merged['snapshots'] = merged['snapshots'].fillna(0).astype(int)
-    merged['avg'] = (merged['players'] / merged['snapshots'].replace(0, 1)).round(2)
+    # Always emit the full Jan..Dec axis
+    buckets = []
+    for month in range(1, 13):
+        for half, day in ((1, 1), (2, MONTHLY_CHART_HALF + 1)):
+            snaps = snaps_by_bucket.get((month, half), 0)
+            players = players_by_bucket.get((month, half), 0)
+            buckets.append({
+                'label': f"{year:04d}-{month:02d}-{day:02d}",
+                'value': round(players / snaps, 2) if snaps > 0 else None,
+                'snapshots': snaps,
+            })
 
-    labels, averages, snapshots = [], [], []
-    for row in merged.sort_values(['month', 'half']).itertuples():
-        bucket_start = pd.Timestamp(row.month).replace(day=1 if int(row.half) == 1 else MONTHLY_CHART_HALF + 1)
-        labels.append(bucket_start.strftime('%Y-%m-%d'))
-        averages.append(float(row.avg))
-        snapshots.append(int(row.snapshots))
+    known = [i for i, b in enumerate(buckets) if b['value'] is not None]
+    if not known:
+        return {'year': year, 'labels': [], 'averages': [], 'snapshots': [], 'interpolated': []}
 
-    logging.info(f"[Monthly] Computed {len(labels)} half-month buckets over {months} months")
-    return {'labels': labels, 'averages': averages, 'snapshots': snapshots}
+    labels, averages, snapshots, interpolated = [], [], [], []
+    for i, bucket in enumerate(buckets):
+        labels.append(bucket['label'])
+        snapshots.append(bucket['snapshots'])
+        if bucket['value'] is not None:
+            averages.append(bucket['value'])
+            interpolated.append(False)
+            continue
+
+        before = [j for j in known if j < i]
+        after = [j for j in known if j > i]
+        if before and after:
+            lo, hi = before[-1], after[0]
+            ratio = (i - lo) / (hi - lo)
+            value = buckets[lo]['value'] + ratio * (buckets[hi]['value'] - buckets[lo]['value'])
+        elif before:
+            # no data after this bucket: hold the last known value
+            value = buckets[before[-1]]['value']
+        else:
+            # no data before this bucket: hold the first known value
+            value = buckets[after[0]]['value']
+        averages.append(round(value, 2))
+        interpolated.append(True)
+
+    logging.info(
+        "[Yearly] Computed %d half-month buckets for %d (%d interpolated)",
+        len(labels), year, sum(interpolated),
+    )
+    return {'year': year, 'labels': labels, 'averages': averages, 'snapshots': snapshots, 'interpolated': interpolated}
 
 
 def _update_served_cache_from_db():

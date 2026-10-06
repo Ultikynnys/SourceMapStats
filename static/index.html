@@ -91,22 +91,24 @@
             <div class="overlay-text">Loading…</div>
           </div>
 
-          <!-- Main share-of-day chart -->
-          <div class="chart-container main-chart">
-            <canvas id="chartCanvas"></canvas>
-          </div>
+          <!-- Total daily players (stacked by server) -->
           <div class="chart-container mt-4">
             <canvas id="totalPlayersChart"></canvas>
           </div>
 
-          <!-- Snapshots-per-day chart -->
-          <div class="chart-container secondary-chart">
-            <canvas id="snapshotChartCanvas"></canvas>
-          </div>
-
-          <!-- Seasonal chart: average players per half-month, last 12 months -->
+          <!-- Seasonal chart: average players per half-month, calendar year -->
           <div class="chart-container secondary-chart">
             <canvas id="monthlyChartCanvas"></canvas>
+          </div>
+
+          <!-- Top maps share of daily players -->
+          <div class="chart-container main-chart">
+            <canvas id="chartCanvas"></canvas>
+          </div>
+
+          <!-- Snapshots-per-day chart (kept last) -->
+          <div class="chart-container secondary-chart">
+            <canvas id="snapshotChartCanvas"></canvas>
           </div>
 
           <!-- Text below charts -->

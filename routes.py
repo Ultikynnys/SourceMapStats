@@ -10,7 +10,7 @@ from database import (
     get_chart_data,
     get_data_freshness,
     get_date_range,
-    get_monthly_averages,
+    get_yearly_averages,
     DB_FILE
 )
 from utils import rate_limiter
@@ -83,11 +83,11 @@ def data_coverage():
 @bp.route("/api/monthly")
 @rate_limiter
 def monthly_averages():
-    """Average concurrent players per half-month bucket over the last 12
-    months (24 points per full year) to surface seasonal trends."""
+    """Average concurrent players per half-month bucket for one calendar year,
+    always Jan..Dec (24 points), with missing buckets interpolated."""
     from utils import parse_chart_params
     params = parse_chart_params(request.args)
-    return jsonify(get_monthly_averages(
+    return jsonify(get_yearly_averages(
         only_maps_containing=params['only_maps_containing'],
         server_filter=params['server_filter'],
         only_servers_containing=params['only_servers_containing'],
