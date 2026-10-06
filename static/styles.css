@@ -1,5 +1,10 @@
 /* styles.css */
 
+/* Single surface colour shared by every container */
+:root {
+  --surface: #333333;
+}
+
 /* Page backdrop texture, held at 10% opacity. Default is Source's own orange
 dev wall material (dev_measurewall01a, extracted from the game's VPK); set
 SITE_BACKGROUND_TEXTURE to a self-hosted image (or data: URI) to override. */
@@ -136,7 +141,7 @@ body::before {
   .ranking-section {
     /* opaque surfaces keep the page texture from showing through at a second
        strength, which read as two backgrounds */
-    background: #1a1a1a;
+    background: var(--surface);
     padding: 1em;
     border-radius: 0;
     color: white;
@@ -260,7 +265,7 @@ body::before {
      Chart box
      ===================================================== */
   .chart-box {
-    background: #333;
+    background: var(--surface);
     padding: 20px;
     border-radius: 0;
     text-align: center;
@@ -353,7 +358,7 @@ body::before {
      Status panel
      ===================================================== */
   .status-section {
-    background: #333;
+    background: var(--surface);
     padding: 20px;
     border-radius: 0;
     text-align: center;
@@ -371,7 +376,7 @@ body::before {
      Parameters panel
      ===================================================== */
   .params-section {
-    background: #2c2c2c;
+    background: var(--surface);
     padding: 20px;
     border-radius: 0;
     display: flex;
@@ -431,7 +436,7 @@ body::before {
      FOOTER
      ===================================================== */
   footer {
-    background: #1e1e1e;
+    background: var(--surface);
     padding: 20px 0;
     color: #e0e0e0;
     margin-top: 40px;
