@@ -134,7 +134,9 @@ body::before {
      RANKING SECTION
      ===================================================== */
   .ranking-section {
-    background: transparent;
+    /* opaque surfaces keep the page texture from showing through at a second
+       strength, which read as two backgrounds */
+    background: #1a1a1a;
     padding: 1em;
     border-radius: 0;
     color: white;
@@ -258,7 +260,7 @@ body::before {
      Chart box
      ===================================================== */
   .chart-box {
-    background: transparent;
+    background: #333;
     padding: 20px;
     border-radius: 0;
     text-align: center;
@@ -351,7 +353,7 @@ body::before {
      Status panel
      ===================================================== */
   .status-section {
-    background: transparent;
+    background: #333;
     padding: 20px;
     border-radius: 0;
     text-align: center;
@@ -369,7 +371,7 @@ body::before {
      Parameters panel
      ===================================================== */
   .params-section {
-    background: transparent;
+    background: #2c2c2c;
     padding: 20px;
     border-radius: 0;
     display: flex;
@@ -429,7 +431,7 @@ body::before {
      FOOTER
      ===================================================== */
   footer {
-    background: transparent;
+    background: #1e1e1e;
     padding: 20px 0;
     color: #e0e0e0;
     margin-top: 40px;
