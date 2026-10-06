@@ -153,6 +153,12 @@ Configure SourceMapStats via the `.env` file:
 # Website title shown in the page header and browser tab
 SITE_TITLE=Team Fortress 2 Map Stats
 
+# Optional page background texture, drawn behind the content at 10% opacity.
+# Empty (default) uses the built-in CSS "dev" checkerboard.
+# Must be a self-hosted path or a data: image (the site CSP is img-src 'self' data:),
+# e.g. drop a file in static/ and set: /static/mytexture.png
+SITE_BACKGROUND_TEXTURE=
+
 # Steam Web API key (required)
 STEAM_API_KEY=your-steam-api-key-here
 

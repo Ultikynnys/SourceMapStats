@@ -308,7 +308,6 @@ function renderChart(data) {
   const serverRank = Array.isArray(data.serverRanking) ? data.serverRanking : [];
   const serverRankingEl = document.getElementById('serverRanking');
   serverRankingEl.textContent = '';
-  let totalAvgPlayers = 0;
   serverRank.forEach((s, idx) => {
     const li = document.createElement('li');
     const label = String(s.label || '');
@@ -322,14 +321,7 @@ function renderChart(data) {
     pct.textContent = `(${s.pop})`;
     li.appendChild(pct);
     serverRankingEl.appendChild(li);
-    totalAvgPlayers += parseFloat(s.pop) || 0;
   });
-
-  // Display total average players
-  const totalEl = document.getElementById('serverRankingTotal');
-  if (totalEl) {
-    totalEl.textContent = `Total Avg Players: ${totalAvgPlayers.toFixed(2)}`;
-  }
 
   // Build datasets for the Total Players chart
   const serverDatasets = (data.totalPlayersServerDatasets && data.totalPlayersServerDatasets.length)

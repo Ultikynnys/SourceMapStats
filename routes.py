@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import logging
 from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request, current_app
@@ -99,12 +100,36 @@ def monthly_averages():
 def index():
     response = current_app.send_static_file("index.html")
     site_title = os.getenv("SITE_TITLE", "Team Fortress 2 Map Stats")
-    # index.html ships with a replaceable @@SITE_TITLE@@ token so instances
-    # can rename the site without editing the HTML
+    # index.html ships with replaceable @@...@@ tokens so an instance can be
+    # renamed and re-skinned without editing the HTML
     response.direct_passthrough = False
-    html = response.get_data(as_text=True).replace("@@SITE_TITLE@@", site_title)
+    html = response.get_data(as_text=True)
+    html = html.replace("@@SITE_TITLE@@", site_title)
+    html = html.replace("@@SITE_TEXTURE_STYLE@@", _background_texture_style())
     response.set_data(html)
     return response
+
+
+def _background_texture_style():
+    """Inline CSS that points the page backdrop at a custom texture image.
+
+    Unset (the default) returns nothing, which leaves the built-in CSS dev
+    checkerboard in styles.css in place. The value must be a URL/path the
+    page can load under the site's CSP, so self-host it under static/."""
+    raw = (os.getenv("SITE_BACKGROUND_TEXTURE") or "").strip()
+    if not raw:
+        return ""
+
+    # keep the value from breaking out of the url("...") declaration
+    if any(ch in raw for ch in ('"', "'", "(", ")", "{", "}", ";", "\\", " ", "\n", "\t")):
+        logging.warning("Ignoring SITE_BACKGROUND_TEXTURE with unsupported characters: %r", raw[:120])
+        return ""
+    if not re.match(r"^(/[A-Za-z0-9._~:/?#\[\]@!$&*+,=%-]+|data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+)$", raw):
+        logging.warning("Ignoring SITE_BACKGROUND_TEXTURE that is not a relative path or data: image: %r", raw[:120])
+        return ""
+
+    logging.info("Serving custom background texture: %s", raw)
+    return f'<style>body::before{{background-image:url("{raw}");}}</style>'
 
 # ─── Admin Panel Routes ─────────────────────────────────────────────────
 from utils import admin_only, is_admin_ip, get_request_stats, ADMIN_IPS, track_request

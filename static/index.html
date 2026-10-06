@@ -9,6 +9,10 @@
   <!-- Main stylesheet -->
   <link rel="stylesheet" href="/static/styles.css">
 
+  <!-- Optional custom page texture (SITE_BACKGROUND_TEXTURE); when unset the
+       built-in CSS dev checkerboard from styles.css is used instead -->
+  @@SITE_TEXTURE_STYLE@@
+
   <!-- Inline CSS to fix chart sizing and error display -->
   <style>
     .chart-box {
@@ -73,7 +77,6 @@
         <ol id="mapRanking"></ol>
         <h2 style="margin-top:1rem;">Server Ranking</h2>
         <ol id="serverRanking"></ol>
-        <div id="serverRankingTotal" class="ranking-total"></div>
       </section>
 
       <!-- MIDDLE: Charts + Status -->
